@@ -4,8 +4,10 @@ import { Car, HardHat, Truck, FilePlus2, Home, LifeBuoy, Mail, Pencil, Phone, Sa
 import PortalLayout from '@/components/PortalLayout';
 import { Empty, Field, Modal, PageTitle, Panel, StatusBadge } from '@/components/ui';
 import { fullName, usePortal } from '@/data/store';
-import { money } from '@/lib/rating';
-import type { Customer, PolicyType } from '@/data/types';
+import { homeFormName, money } from '@/lib/rating';
+import type { Customer, Policy, PolicyType } from '@/data/types';
+
+export const policyLabel = (p: Policy) => (p.homeCoverages?.form ? homeFormName[p.homeCoverages.form] : p.policyForm === 'Trucking' ? 'Trucking (Motor Carrier)' : p.policyForm ?? p.type);
 
 export const policyIcon: Record<PolicyType, typeof Car> = { Auto: Car, Home, Boat: Sailboat, Life: LifeBuoy, Umbrella, Business: Store, 'Commercial Auto': Truck, 'Workers Comp': HardHat };
 
@@ -70,7 +72,7 @@ export function CustomerPage() {
     <div className="px-cols">
       <div className="px-main-col">
         <Panel title={`Policies (${owned.length})`}>
-          {owned.length === 0 ? <Empty>No policies yet.</Empty> : <div className="policy-cards">{owned.map((p) => { const Icon = policyIcon[p.type]; const acct = billing.find((b) => b.policyNumber === p.number); return <Link key={p.number} to={`/policies/${p.number}`} className="policy-card"><div className="policy-card-top"><Icon size={18} /><strong>{p.type}</strong><StatusBadge status={p.status} /></div><span className="mono">{p.number}</span><span>{p.description}</span><span className="policy-card-meta">{p.effective} – {p.expiration} · {money(p.premium)}/yr</span>{acct && <span className="policy-card-meta">{acct.minimumDue > 0 ? `${money(acct.minimumDue, true)} due ${acct.nextDueDate}` : 'Paid — nothing due'}{p.autoPay ? ' · AutoPay' : ''}</span>}</Link>; })}</div>}
+          {owned.length === 0 ? <Empty>No policies yet.</Empty> : <div className="policy-cards">{owned.map((p) => { const Icon = policyIcon[p.type]; const acct = billing.find((b) => b.policyNumber === p.number); return <Link key={p.number} to={`/policies/${p.number}`} className="policy-card"><div className="policy-card-top"><Icon size={18} /><strong>{policyLabel(p)}</strong><StatusBadge status={p.status} /></div><span className="mono">{p.number}</span><span>{p.description}</span><span className="policy-card-meta">{p.effective} – {p.expiration} · {money(p.premium)}/yr</span>{acct && <span className="policy-card-meta">{acct.minimumDue > 0 ? `${money(acct.minimumDue, true)} due ${acct.nextDueDate}` : 'Paid — nothing due'}{p.autoPay ? ' · AutoPay' : ''}</span>}</Link>; })}</div>}
         </Panel>
         <Panel title={`Claims (${custClaims.length})`} actions={<Link to={`/claims/new?customer=${customer.id}`}>Report a claim</Link>}>
           {custClaims.length === 0 ? <Empty>No claims on file.</Empty> : <table className="px-table"><thead><tr><th>Claim #</th><th>Loss date</th><th>Type</th><th>Status</th><th>Paid</th></tr></thead><tbody>{custClaims.map((c) => <tr key={c.number}><td><Link to={`/claims/${c.number}`} className="mono">{c.number}</Link></td><td>{c.lossDate}</td><td>{c.lossType}</td><td><StatusBadge status={c.status} /></td><td>{money(c.paid)}</td></tr>)}</tbody></table>}

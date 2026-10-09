@@ -17,7 +17,7 @@ const lossTypesByPolicy: Record<PolicyType, string[]> = {
   Boat: ['Boat — Collision / allision', 'Boat — Sinking or swamping', 'Boat — Theft', 'Boat — Storm damage', 'Boat — Liability (injury or damage to others)'],
   Umbrella: ['Umbrella — Excess liability claim'],
   Business: ['Business — Fire / smoke', 'Business — Wind / hail', 'Business — Water damage', 'Business — Theft / burglary', 'Business — General liability (third-party injury)', 'Business — Income interruption', 'Contractors — Equipment or tools loss'],
-  'Commercial Auto': ['Commercial auto — Collision', 'Commercial auto — Comprehensive', 'Commercial auto — Liability (other party)', 'Garagekeepers — Customer vehicle damage'],
+  'Commercial Auto': ['Commercial auto — Collision', 'Commercial auto — Comprehensive', 'Commercial auto — Liability (other party)', 'Garagekeepers — Customer vehicle damage', 'Motor truck cargo — Cargo loss or damage', 'Trucking — Trailer interchange damage'],
   'Workers Comp': ['Workers comp — Medical-only injury', 'Workers comp — Lost-time injury'],
   Life: [],
 };

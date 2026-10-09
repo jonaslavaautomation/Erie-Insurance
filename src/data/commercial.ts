@@ -54,7 +54,31 @@ export function rateBusiness(b: BusinessDetails): PremiumBreakdown {
   return { product: 'Business', name: BOP_NAME, lines, discounts, total };
 }
 
-export const BOP_NAME = 'Ultrapack Plus (Business Owners Policy)';
+// Monoline commercial property (no liability), for larger or non-BOP-eligible buildings.
+export function rateCommercialProperty(b: BusinessDetails): PremiumBreakdown {
+  const round = Math.round;
+  const t = territory[b.state] ?? 1;
+  const cf = constructionFactor[b.construction];
+  const df = deductibleFactor[b.propertyDeductible] ?? 1;
+  const rate = 0.34;
+  const building = b.ownsBuilding ? round((b.buildingLimit / 100) * rate * cf * df * t) : 0;
+  const bpp = round((b.bppLimit / 100) * rate * cf * 1.1 * df * t);
+  const lines: PremiumLine[] = [];
+  if (b.ownsBuilding) lines.push({ label: `Building — $${b.buildingLimit.toLocaleString()} (replacement cost, 90% coinsurance)`, amount: building });
+  lines.push({ label: `Business personal property — $${b.bppLimit.toLocaleString()}`, amount: bpp });
+  lines.push({ label: 'Income Protection — 12 months actual loss sustained', amount: round((building + bpp) * 0.09) });
+  lines.push({ label: 'Extra Expense', amount: round((building + bpp) * 0.03) });
+  if (b.equipmentBreakdown) lines.push({ label: 'Equipment breakdown', amount: round(150 + b.squareFeet * 0.01) });
+  if (b.employeeDishonesty) lines.push({ label: 'Employee dishonesty — $25,000', amount: 85 });
+  const property = building + bpp;
+  const discounts: PremiumLine[] = [];
+  if (b.sprinklered) discounts.push({ label: 'Automatic sprinkler credit', amount: -round(property * 0.1) });
+  if (b.alarm !== 'None') discounts.push({ label: `${b.alarm} fire alarm credit`, amount: -round(property * (b.alarm === 'Central Station' ? 0.07 : 0.03)) });
+  const total = Math.max(750, lines.reduce((s, l) => s + l.amount, 0) + discounts.reduce((s, l) => s + l.amount, 0));
+  return { product: 'Business', name: 'Commercial Property', lines, discounts, total };
+}
+
+export const BOP_NAME ='Ultrapack Plus (Business Owners Policy)';
 export const CONTRACTORS_NAME = 'Fivestar Contractors Package';
 
 export const commercialLineLabels: Record<CommercialLine, string> = {
@@ -111,9 +135,16 @@ export function rateCommercialAuto(a: CommercialAutoDetails, state: string): Pre
   });
   if (a.garagekeepers) lines.push({ label: `Garagekeepers liability — $${a.garagekeepersLimit.toLocaleString()}`, amount: Math.round(a.garagekeepersLimit * 0.004) });
   if (a.hiredNonOwned) lines.push({ label: 'Hired & non-owned auto', amount: 140 });
+  const tr = a.trucking;
+  if (tr) {
+    if (tr.trailers) lines.push({ label: `Owned trailers (${tr.trailers}) — physical damage`, amount: Math.round(tr.trailers * 420 * t) });
+    lines.push({ label: `Motor truck cargo — $${tr.cargoLimit.toLocaleString()} (${tr.commodity})`, amount: Math.round(tr.cargoLimit * 0.011 * t) });
+    if (tr.trailerInterchange) lines.push({ label: 'Trailer interchange — $40,000', amount: 380 });
+    lines.push({ label: 'MCS-90 endorsement & federal filings', amount: 0 });
+  }
   const discounts: PremiumLine[] = a.vehicles.length >= 5 ? [{ label: 'Fleet credit (5+ units)', amount: -Math.round(lines.reduce((s, l) => s + l.amount, 0) * 0.07) }] : [];
   const total = lines.reduce((s, l) => s + l.amount, 0) + discounts.reduce((s, l) => s + l.amount, 0);
-  return { product: 'Commercial Auto', name: 'Commercial Auto', lines, discounts, total: Math.max(0, total) };
+  return { product: 'Commercial Auto', name: tr ? 'Trucking (Motor Carrier)' : 'Commercial Auto', lines, discounts, total: Math.max(0, total) };
 }
 
 // NCCI-style class codes with illustrative rates per $100 of payroll.

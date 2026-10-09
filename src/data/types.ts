@@ -79,8 +79,10 @@ export type Property = {
   smokeAlarms: boolean;
   burglarAlarm: boolean;
   sprinklers: boolean;
-  dwellingType: 'Single Family' | 'Townhouse' | 'Condo';
+  dwellingType: 'Single Family' | 'Townhouse' | 'Condo' | 'Apartment' | 'Duplex';
 };
+
+export type HomeForm = 'HO-3' | 'HO-4' | 'HO-6' | 'DP-3';
 
 export type HomeCoverages = {
   dwelling: number;
@@ -97,6 +99,10 @@ export type HomeCoverages = {
   serviceLine: boolean;
   homeSharing: boolean;
   scheduledValuables: number;
+  // Policy form: HO-3 homeowners (default), HO-4 renters, HO-6 condo unit-owners, DP-3 landlord/rental dwelling.
+  form?: HomeForm;
+  // Coverage C as a dollar amount for HO-4/HO-6, and landlord furnishings for DP-3.
+  contentsLimit?: number;
 };
 
 export type BoatDetails = {
@@ -166,6 +172,8 @@ export type CommercialVehicle = {
 
 export type CommercialDriver = { id: string; name: string; age: number; violations: number; accidents: number };
 
+export type TruckingDetails = { usdot: string; mcNumber: string; commodity: string; cargoLimit: number; trailerInterchange: boolean; trailers: number };
+
 export type CommercialAutoDetails = {
   vehicles: CommercialVehicle[];
   drivers: CommercialDriver[];
@@ -174,6 +182,8 @@ export type CommercialAutoDetails = {
   garagekeepers: boolean;
   garagekeepersLimit: number;
   hiredNonOwned: boolean;
+  // Present for for-hire trucking (motor carrier) policies.
+  trucking?: TruckingDetails;
 };
 
 export type WorkersCompClass = { id: string; code: string; payroll: number };
@@ -308,6 +318,8 @@ export type Policy = {
   contractors?: ContractorsDetails;
   commercialAuto?: CommercialAutoDetails;
   workersComp?: WorkersCompDetails;
+  // Distinguishes monoline commercial lines that share a policy type, e.g. Commercial Property vs. BOP.
+  policyForm?: 'Commercial Property' | 'Trucking';
   description: string;
   documents: PolicyDocument[];
   history: HistoryEntry[];

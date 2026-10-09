@@ -1,4 +1,4 @@
-import type { AutoCoverages, BoatDetails, Driver, HomeCoverages, LifeDetails, PayPlan, PremiumBreakdown, PremiumLine, Property, UmbrellaDetails, Vehicle } from '@/data/types';
+import type { AutoCoverages, BoatDetails, Driver, HomeCoverages, HomeForm, LifeDetails, PayPlan, PremiumBreakdown, PremiumLine, Property, UmbrellaDetails, Vehicle } from '@/data/types';
 
 // Illustrative rating factors for the demo portal. These are not ERIE filed rates.
 export const stateFactor: Record<string, number> = { PA: 1, OH: 0.92, WI: 0.95, NY: 1.38, IL: 1.06, IN: 0.94, KY: 1.12, MD: 1.18, NC: 0.97, TN: 1.02, VA: 1.03, WV: 1.08, DC: 1.3 };
@@ -79,7 +79,57 @@ export function rateAuto(state: string, drivers: Driver[], vehicles: Vehicle[], 
   return withTotal({ product: 'Auto', name: 'ERIE Auto', lines, discounts });
 }
 
+export const homeFormName: Record<HomeForm, string> = { 'HO-3': 'ErieSecure Home® (HO-3)', 'HO-4': 'Renters (HO-4)', 'HO-6': 'Condominium Unit-Owners (HO-6)', 'DP-3': 'Rental Dwelling / Landlord (DP-3)' };
+
+// HO-4, HO-6 and DP-3 forms. HO-3 is rated by rateHome below.
+function rateHomeForm(state: string, property: Property, c: HomeCoverages, form: Exclude<HomeForm, 'HO-3'>, options: { multiPolicy: boolean; earlyQuote: boolean }): PremiumBreakdown {
+  const territory = stateFactor[state] ?? 1;
+  const dedFactor = ({ 500: 1.12, 1000: 1, 2500: 0.86, 5000: 0.76 } as Record<number, number>)[c.deductible] ?? 1;
+  const protectionLoad = 0.88 + property.protectionClass * 0.035;
+  const contents = c.contentsLimit ?? 0;
+  const lines: PremiumLine[] = [];
+  if (form === 'HO-4') {
+    const cPrem = round((contents / 1000) * 4.2 * territory * protectionLoad * dedFactor);
+    lines.push({ label: `Coverage C · Personal property — ${money(contents)} (replacement cost)`, amount: cPrem });
+    lines.push({ label: `Coverage D · Loss of use — ${money(contents * 0.3)}`, amount: round(cPrem * 0.08) });
+  } else if (form === 'HO-6') {
+    const aPrem = round((c.dwelling / 1000) * 2.1 * territory * protectionLoad * dedFactor);
+    const cPrem = round((contents / 1000) * 3.4 * territory * protectionLoad * dedFactor);
+    lines.push({ label: `Coverage A · Building additions & alterations — ${money(c.dwelling)}`, amount: aPrem });
+    lines.push({ label: `Coverage C · Personal property — ${money(contents)}`, amount: cPrem });
+    lines.push({ label: `Coverage D · Loss of use — ${money(contents * 0.4)}`, amount: round(cPrem * 0.1) });
+    lines.push({ label: 'Loss assessment — $50,000', amount: 28 });
+  } else {
+    const age = Math.max(0, new Date().getFullYear() - property.yearBuilt);
+    const roofLoad = new Date().getFullYear() - property.roofYear > 20 ? 1.18 : 1;
+    const aPrem = round((c.dwelling / 1000) * 3.6 * territory * (age > 50 ? 1.15 : 1) * roofLoad * (property.construction === 'Frame' ? 1.06 : 0.95) * protectionLoad * dedFactor);
+    lines.push({ label: `Coverage A · Dwelling (rental) — ${money(c.dwelling)}`, amount: aPrem });
+    lines.push({ label: `Coverage B · Other structures — ${money(c.dwelling * (c.otherStructuresPct ?? 10) / 100)}`, amount: round(aPrem * 0.04) });
+    if (contents) lines.push({ label: `Coverage C · Landlord furnishings — ${money(contents)}`, amount: round((contents / 1000) * 3 * territory) });
+    lines.push({ label: `Coverage D · Fair rental value — ${money(c.dwelling * (c.lossOfUsePct ?? 10) / 100)}`, amount: round(aPrem * 0.05) });
+  }
+  const liabilityLabel = form === 'DP-3' ? 'Coverage L · Premises liability' : 'Coverage E · Personal liability';
+  lines.push({ label: `${liabilityLabel} — ${money(c.personalLiability)}`, amount: round((form === 'DP-3' ? 45 : 18) + c.personalLiability / (form === 'DP-3' ? 15000 : 30000)) });
+  lines.push({ label: `${form === 'DP-3' ? 'Coverage M' : 'Coverage F'} · Medical payments — ${money(c.medicalPayments)}`, amount: round(5 + c.medicalPayments / 1000) });
+  if (c.waterBackup) lines.push({ label: 'Water backup & sump discharge', amount: form === 'DP-3' ? 65 : 35 });
+  if (c.identityRecovery && form !== 'DP-3') lines.push({ label: 'Identity recovery', amount: 25 });
+  if (c.equipmentBreakdown) lines.push({ label: 'Equipment breakdown', amount: form === 'DP-3' ? 30 : 20 });
+  if (c.serviceLine && form === 'DP-3') lines.push({ label: 'Service line (underground utility lines)', amount: 22 });
+  if (c.scheduledValuables > 0 && form !== 'DP-3') lines.push({ label: `Scheduled valuables — ${money(c.scheduledValuables)}`, amount: round(c.scheduledValuables * 0.012) });
+
+  const subtotal = sum(lines);
+  const discounts: PremiumLine[] = [];
+  if (options.multiPolicy) discounts.push({ label: `Multi-policy discount (auto + home) — 15%`, amount: -round(subtotal * 0.15) });
+  const protective = [property.smokeAlarms, property.burglarAlarm, property.sprinklers].filter(Boolean).length;
+  if (protective) discounts.push({ label: 'Protective device discount', amount: -round(subtotal * 0.03 * protective) });
+  if (options.earlyQuote) discounts.push({ label: 'Advance quote discount (7+ days)', amount: -round(subtotal * 0.04) });
+  // Small policies still carry a minimum premium.
+  return withTotal({ product: 'Home', name: homeFormName[form], lines, discounts }, form === 'HO-4' ? 120 : 175);
+}
+
 export function rateHome(state: string, property: Property, coverages: HomeCoverages, options: { multiPolicy: boolean; earlyQuote: boolean; payPlan: PayPlan }): PremiumBreakdown {
+  const form = coverages.form ?? 'HO-3';
+  if (form !== 'HO-3') return rateHomeForm(state, property, coverages, form, options);
   const territory = stateFactor[state] ?? 1;
   const age = Math.max(0, new Date().getFullYear() - property.yearBuilt);
   const ageLoad = age > 60 ? 1.22 : age > 30 ? 1.1 : age < 10 ? 0.9 : 1;

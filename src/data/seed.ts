@@ -1,5 +1,6 @@
-import type { AutoCoverages, BillingAccount, BoatDetails, Claim, CommercialDetails, Customer, Driver, Envelope, HomeCoverages, Lead, LifeDetails, Policy, Property, Quote, UmbrellaDetails, Vehicle } from '@/data/types';
+import type { AutoCoverages, BillingAccount, BusinessDetails, CommercialAutoDetails, BoatDetails, Claim, CommercialDetails, Customer, Driver, Envelope, HomeCoverages, Lead, LifeDetails, Policy, Property, Quote, UmbrellaDetails, Vehicle } from '@/data/types';
 import { payPlanInstallments, rateAuto, rateHome } from '@/lib/rating';
+import { rateCommercialAuto, rateCommercialProperty } from '@/data/commercial';
 
 // Sample data for the demo portal. None of these are real ERIE customers.
 export const AGENT = {
@@ -124,6 +125,9 @@ const customers: Customer[] = [
   { id: 'C-101034', firstName: 'Aisha', middleName: '', lastName: 'Thompson', address: '4410 Cherokee Drive', city: 'Fitchburg', state: 'WI', zip: '53711', dob: '1991-05-30', phone: '(608) 555-0134', email: 'aisha.t@example.com', customerSince: '2022-01-20' },
   { id: 'C-101290', firstName: 'Daniel', middleName: 'P', lastName: 'Nguyen', address: '17 Willow Bend Court', city: 'Middleton', state: 'WI', zip: '53562', dob: '1979-08-12', phone: '(608) 555-0177', email: 'dnguyen@example.com', customerSince: '2017-04-05' },
   { id: 'C-101533', firstName: 'Linda', middleName: 'M', lastName: 'Schaefer', address: '903 Harbor View Lane', city: 'Sun Prairie', state: 'WI', zip: '53590', dob: '1962-12-03', phone: '(608) 555-0101', email: 'lschaefer@example.com', customerSince: '2011-07-22' },
+  // Dummy test insureds: a personal household with every home form, and a commercial account.
+  { id: 'C-900101', firstName: 'Taylor', middleName: 'R', lastName: 'Morgan', address: '1450 Prairie Ridge Road', city: 'Verona', state: 'WI', zip: '53593', dob: '1981-08-14', phone: '(608) 555-0164', email: 'taylor.morgan@example.com', customerSince: '2016-05-01' },
+  { id: 'C-900201', firstName: 'Chris', middleName: '', lastName: 'Delgado', address: '3100 Commerce Drive', city: 'Sun Prairie', state: 'WI', zip: '53590', dob: '1975-02-19', phone: '(608) 555-0193', email: 'chris@delgadotransport.example', customerSince: '2018-01-15' },
 ];
 
 const driver = (id: string, firstName: string, lastName: string, dob: string, extra: Partial<Driver> = {}): Driver => ({ id, firstName, lastName, dob, gender: 'M', maritalStatus: 'Married', relationship: 'Named Insured', licenseState: 'WI', licenseNumber: `${lastName[0]}${id.replace(/\D/g, '').padEnd(12, '4')}`.slice(0, 13), yearsLicensed: 20, violations: 0, accidents: 0, driverTraining: false, goodStudent: false, ...extra });
@@ -153,6 +157,42 @@ function baseHistory(seed: PolicySeed): Policy['history'] {
   return [{ date: seed.effective, text: `Policy renewed for term ${seed.effective} – ${seed.expiration}`, by: 'System' }];
 }
 
+// Delgado Transport & Properties LLC — shared business profile for its commercial policies.
+const delgadoBusiness: BusinessDetails = {
+  businessName: 'Delgado Transport & Properties LLC', ownerFirst: 'Chris', ownerLast: 'Delgado', entity: 'LLC', fein: '39-4817265', yearsInBusiness: 12, classCode: '',
+  description: 'Regional freight hauling, local delivery and warehouse leasing', revenue: 3800000, payroll: 1450000, employees: 22,
+  address: '3100 Commerce Drive', city: 'Sun Prairie', state: 'WI', zip: '53590', phone: '(608) 555-0193', email: 'chris@delgadotransport.example',
+  ownsBuilding: true, construction: 'Non-combustible', yearBuilt: 2004, squareFeet: 18000, sprinklered: true, alarm: 'Central Station',
+  buildingLimit: 2400000, bppLimit: 350000, glLimit: '2M/4M', propertyDeductible: 2500, cyber: false, epli: false, hiredNonOwnedAuto: false, equipmentBreakdown: true, employeeDishonesty: true,
+};
+const delgadoAuto: CommercialAutoDetails = {
+  vehicles: [
+    { id: 'CV1', year: 2024, make: 'Ford', model: 'Transit 250', bodyType: 'Light Truck', costNew: 52000, radius: 'Local (0–50 mi)' },
+    { id: 'CV2', year: 2023, make: 'Ram', model: 'ProMaster 2500', bodyType: 'Light Truck', costNew: 48000, radius: 'Local (0–50 mi)' },
+    { id: 'CV3', year: 2022, make: 'Chevrolet', model: 'Silverado 2500HD', bodyType: 'Light Truck', costNew: 61000, radius: 'Intermediate (51–200 mi)' },
+  ],
+  drivers: [
+    { id: 'CD1', name: 'Chris Delgado', age: 51, violations: 0, accidents: 0 },
+    { id: 'CD2', name: 'Marco Ruiz', age: 34, violations: 0, accidents: 0 },
+    { id: 'CD3', name: 'Dana Kim', age: 27, violations: 1, accidents: 0 },
+  ],
+  liability: '1,000,000 CSL', physicalDamageDeductible: 1000, garagekeepers: false, garagekeepersLimit: 0, hiredNonOwned: true,
+};
+const delgadoTrucking: CommercialAutoDetails = {
+  vehicles: [
+    { id: 'TR1', year: 2022, make: 'Freightliner', model: 'Cascadia 126', bodyType: 'Heavy Truck', costNew: 168000, radius: 'Intermediate (51–200 mi)' },
+    { id: 'TR2', year: 2020, make: 'Peterbilt', model: '579', bodyType: 'Heavy Truck', costNew: 152000, radius: 'Intermediate (51–200 mi)' },
+    { id: 'TR3', year: 2021, make: 'International', model: 'LT625', bodyType: 'Heavy Truck', costNew: 145000, radius: 'Intermediate (51–200 mi)' },
+  ],
+  drivers: [
+    { id: 'TD1', name: 'Luis Ortega (CDL-A)', age: 46, violations: 0, accidents: 0 },
+    { id: 'TD2', name: 'Brenda Haskins (CDL-A)', age: 39, violations: 0, accidents: 0 },
+    { id: 'TD3', name: 'Terrence Cole (CDL-A)', age: 52, violations: 0, accidents: 1 },
+  ],
+  liability: '1,000,000 CSL', physicalDamageDeductible: 1000, garagekeepers: false, garagekeepersLimit: 0, hiredNonOwned: false,
+  trucking: { usdot: '3184427', mcNumber: 'MC-1092215', commodity: 'General freight — dry van', cargoLimit: 100000, trailerInterchange: true, trailers: 4 },
+};
+
 const policies: Policy[] = [
   autoPolicy({ number: 'A05-2817734', type: 'Auto', customerId: 'C-100231', status: 'Active', effective: '2026-03-01', expiration: '2027-03-01', payPlan: 'Monthly', autoPay: true, agentNumber: 'Agent #10492', description: '2 vehicles · 2 drivers', drivers: [driver('D1', 'David', 'Guttenberg', '1968-07-14'), driver('D2', 'Karen', 'Guttenberg', '1970-04-02', { gender: 'F', relationship: 'Spouse' })], vehicles: [vehicle('V1', 2022, 'Subaru', 'Outback', '4S4BTANC5N3184471', { garagingZip: '53597' }), vehicle('V2', 2019, 'Ford', 'F-150', '1FTEW1E53KFA77210', { garagingZip: '53597', use: 'Pleasure' })], autoCoverages: { ...defaultAutoCoverages, autoPlus: true } }, true),
   homePolicy({ number: 'H07-1938842', type: 'Home', customerId: 'C-100231', status: 'Active', effective: '2026-03-01', expiration: '2027-03-01', payPlan: 'Annual', autoPay: false, agentNumber: 'Agent #10492', description: 'ErieSecure Home · 509 Erie Insurance Way', drivers: [], vehicles: [], property: { ...defaultProperty, yearBuilt: 1987, squareFeet: 2450 }, homeCoverages: { ...defaultHomeCoverages, dwelling: 385000, waterBackup: true } }, true),
@@ -165,6 +205,17 @@ const policies: Policy[] = [
   homePolicy({ number: 'H07-2290571', type: 'Home', customerId: 'C-101290', status: 'Active', effective: '2025-11-01', expiration: '2026-11-01', payPlan: 'Annual', autoPay: false, agentNumber: 'Agent #10492', description: 'ErieSecure Home · 17 Willow Bend Court', drivers: [], vehicles: [], property: { ...defaultProperty, yearBuilt: 2018, construction: 'Masonry Veneer', roofYear: 2018, burglarAlarm: true }, homeCoverages: { ...defaultHomeCoverages, dwelling: 520000, serviceLine: true, scheduledValuables: 18000 } }, false),
   simplePolicy({ number: 'U03-0098154', type: 'Umbrella', customerId: 'C-101290', status: 'Active', effective: '2025-11-01', expiration: '2026-11-01', payPlan: 'Annual', autoPay: false, agentNumber: 'Agent #10492', description: 'Personal Catastrophe Liability · $1,000,000', drivers: [], vehicles: [], premium: 245, umbrella: { limit: 1000000, autoExposures: 2, youthfulOperators: 0, watercraft: 0, recreationalVehicles: 0, residences: 1, otherAutoLimits: '250/500', otherHomeLiability: 300000 } }),
   simplePolicy({ number: 'Q97-5520193', type: 'Business', customerId: 'C-101533', status: 'Active', effective: '2026-07-01', expiration: '2027-07-01', payPlan: 'Quarterly', autoPay: true, agentNumber: 'Agent #10492', description: 'ErieSecure Business® · Schaefer Floral & Gifts', drivers: [], vehicles: [], premium: 3180 }),
+  // Taylor Morgan household — 2 auto policies, HO-3, HO-4, HO-6 and a DP-3 landlord policy.
+  autoPolicy({ number: 'A05-9100101', type: 'Auto', customerId: 'C-900101', status: 'Active', effective: '2026-04-01', expiration: '2027-04-01', payPlan: 'Monthly', autoPay: true, agentNumber: 'Agent #10492', description: '2 vehicles · 2 drivers', drivers: [driver('MD1', 'Taylor', 'Morgan', '1981-08-14', { gender: 'X' }), driver('MD2', 'Jamie', 'Morgan', '1982-01-27', { gender: 'F', relationship: 'Spouse' })], vehicles: [vehicle('MV1', 2024, 'Toyota', 'Highlander XLE', '5TDKDRAH2RS512345', { garagingZip: '53593', lienholder: 'Toyota Financial Services' }), vehicle('MV2', 2021, 'Honda', 'Accord EX', '1HGCV1F45MA012346', { garagingZip: '53593' })], autoCoverages: { ...defaultAutoCoverages, bodilyInjury: '250/500', uninsuredMotorist: '250/500', autoPlus: true, emergencyRoadService: true, transportationExpense: true } }, true),
+  autoPolicy({ number: 'A05-9100102', type: 'Auto', customerId: 'C-900101', status: 'Active', effective: '2026-04-01', expiration: '2027-04-01', payPlan: 'Quarterly', autoPay: false, agentNumber: 'Agent #10492', description: '2 vehicles · 2 drivers (includes youthful driver)', drivers: [driver('MD3', 'Taylor', 'Morgan', '1981-08-14', { gender: 'X' }), driver('MD4', 'Riley', 'Morgan', '2007-03-02', { maritalStatus: 'Single', relationship: 'Child', yearsLicensed: 3, driverTraining: true, goodStudent: true })], vehicles: [vehicle('MV3', 2019, 'Jeep', 'Wrangler Sport', '1C4GJXAG5KW512347', { garagingZip: '53593', use: 'Pleasure', annualMiles: 6000 }), vehicle('MV4', 2015, 'Honda', 'Civic LX', '19XFB2F55FE012348', { garagingZip: '53703', annualMiles: 8000 })], autoCoverages: { ...defaultAutoCoverages, collisionDeductible: 1000 } }, true),
+  homePolicy({ number: 'H07-9100103', type: 'Home', customerId: 'C-900101', status: 'Active', effective: '2026-04-01', expiration: '2027-04-01', payPlan: 'Annual', autoPay: false, agentNumber: 'Agent #10492', description: 'ErieSecure Home (HO-3) · 1450 Prairie Ridge Road, Verona', drivers: [], vehicles: [], property: { ...defaultProperty, yearBuilt: 2006, squareFeet: 2850, roofYear: 2019, burglarAlarm: true }, homeCoverages: { ...defaultHomeCoverages, form: 'HO-3', dwelling: 465000, personalLiability: 500000, waterBackup: true, serviceLine: true, identityRecovery: true } }, true),
+  homePolicy({ number: 'H07-9100104', type: 'Home', customerId: 'C-900101', status: 'Active', effective: '2026-08-15', expiration: '2027-08-15', payPlan: 'Annual', autoPay: false, agentNumber: 'Agent #10492', description: 'Renters (HO-4) · 215 N Frances St Apt 4B, Madison — student residence for Riley Morgan', drivers: [], vehicles: [], property: { ...defaultProperty, dwellingType: 'Apartment', yearBuilt: 1972, squareFeet: 780, construction: 'Masonry', roofYear: 2015, stories: 1, protectionClass: 3 }, homeCoverages: { ...defaultHomeCoverages, form: 'HO-4', dwelling: 0, contentsLimit: 30000, personalLiability: 300000, medicalPayments: 1000, deductible: 500, identityRecovery: true } }, false),
+  homePolicy({ number: 'H07-9100105', type: 'Home', customerId: 'C-900101', status: 'Active', effective: '2026-05-20', expiration: '2027-05-20', payPlan: 'Annual', autoPay: false, agentNumber: 'Agent #10492', description: 'Condo (HO-6) · 1100 Wisconsin Dells Pkwy Unit 312, Wisconsin Dells', drivers: [], vehicles: [], property: { ...defaultProperty, dwellingType: 'Condo', yearBuilt: 2012, squareFeet: 1150, construction: 'Masonry Veneer', roofYear: 2012, stories: 1, sprinklers: true }, homeCoverages: { ...defaultHomeCoverages, form: 'HO-6', dwelling: 60000, contentsLimit: 50000, personalLiability: 300000, medicalPayments: 2000, waterBackup: true } }, true),
+  homePolicy({ number: 'H08-9100106', type: 'Home', customerId: 'C-900101', status: 'Active', effective: '2026-06-01', expiration: '2027-06-01', payPlan: 'Semi-Annual', autoPay: false, agentNumber: 'Agent #10492', description: 'Landlord (DP-3) · 618 W Main St, Mount Horeb — rental duplex, 2 units', drivers: [], vehicles: [], property: { ...defaultProperty, dwellingType: 'Duplex', yearBuilt: 1958, squareFeet: 1900, roofYear: 2014, protectionClass: 5 }, homeCoverages: { ...defaultHomeCoverages, form: 'DP-3', dwelling: 285000, otherStructuresPct: 10, lossOfUsePct: 10, contentsLimit: 5000, personalLiability: 500000, medicalPayments: 2000, deductible: 2500, serviceLine: true, equipmentBreakdown: true } }, false),
+  // Delgado Transport & Properties LLC — commercial auto, trucking and commercial property.
+  simplePolicy({ number: 'CA1-9100201', type: 'Commercial Auto', customerId: 'C-900201', status: 'Active', effective: '2026-02-01', expiration: '2027-02-01', payPlan: 'Quarterly', autoPay: true, agentNumber: 'Agent #20941', description: 'Commercial Auto · 3 service vehicles · Delgado Transport & Properties LLC', drivers: [], vehicles: [], business: delgadoBusiness, commercialAuto: delgadoAuto, premium: rateCommercialAuto(delgadoAuto, 'WI').total }),
+  simplePolicy({ number: 'CA1-9100202', type: 'Commercial Auto', policyForm: 'Trucking', customerId: 'C-900201', status: 'Active', effective: '2026-02-01', expiration: '2027-02-01', payPlan: 'Monthly', autoPay: true, agentNumber: 'Agent #20941', description: 'Trucking (Motor Carrier) · 3 tractors, 4 trailers · USDOT 3184427', drivers: [], vehicles: [], business: delgadoBusiness, commercialAuto: delgadoTrucking, premium: rateCommercialAuto(delgadoTrucking, 'WI').total }),
+  simplePolicy({ number: 'Q97-9100203', type: 'Business', policyForm: 'Commercial Property', customerId: 'C-900201', status: 'Active', effective: '2026-02-01', expiration: '2027-02-01', payPlan: 'Annual', autoPay: false, agentNumber: 'Agent #20941', description: 'Commercial Property · 18,000 sq ft warehouse, 3100 Commerce Drive', drivers: [], vehicles: [], business: delgadoBusiness, premium: rateCommercialProperty(delgadoBusiness).total }),
 ];
 
 // Each account: installments paid so far this term, the next due date, and the payment method.
@@ -195,6 +246,15 @@ const billing: BillingAccount[] = [
   account('H07-2290571', 1, '2026-11-01', 'Checking ••3390', '2025-10-28', 66509213),
   account('U03-0098154', 1, '2026-11-01', 'Checking ••3390', '2025-10-28', 66509214),
   account('Q97-5520193', 2, '2027-01-01', 'ERIExpressPay® · Checking ••6621', '2026-07-01', 74400518),
+  account('A05-9100101', 7, '2026-11-01', 'AutoPay · Checking ••2210', '2026-04-01', 72210101),
+  account('A05-9100102', 3, '2027-01-01', 'Checking ••2210', '2026-04-01', 72210102),
+  account('H07-9100103', 1, '2027-04-01', 'Visa ••8813', '2026-03-20', 72210103),
+  account('H07-9100104', 1, '2027-08-15', 'Visa ••8813', '2026-08-10', 72210104),
+  account('H07-9100105', 1, '2027-05-20', 'Checking ••2210', '2026-05-15', 72210105),
+  account('H08-9100106', 1, '2026-12-01', 'Checking ••2210', '2026-06-01', 72210106),
+  account('CA1-9100201', 3, '2026-11-01', 'ERIExpressPay® · Checking ••5521', '2026-02-01', 73310201),
+  account('CA1-9100202', 9, '2026-11-01', 'ERIExpressPay® · Checking ••5521', '2026-02-01', 73310202),
+  account('Q97-9100203', 1, '2027-02-01', 'Checking ••5521', '2026-01-25', 73310203),
 ];
 
 const claims: Claim[] = [
@@ -247,6 +307,9 @@ const sampleQuote: Quote = {
   updatedAt: '2026-09-29T10:40:00',
   lastStep: 'coverages',
 };
+
+const delgadoTruckPolicy = policies.find((p) => p.number === 'CA1-9100202')!;
+delgadoTruckPolicy.documents = [{ name: 'MCS-90 Endorsement', date: '2026-02-01', kind: 'Endorsement' }, { name: 'BMC-91X Federal Filing (FMCSA)', date: '2026-02-01', kind: 'Notice' }, ...delgadoTruckPolicy.documents];
 
 // The Kowalski auto policy missed its first installment; ERIE has mailed a notice of cancellation.
 const kowalskiAuto = policies.find((p) => p.number === 'A05-1120456')!;
