@@ -19,7 +19,10 @@ const ClaimsListPage = lazy(() => import('@/pages/ClaimsPages').then((m) => ({ d
 const ClaimReportPage = lazy(() => import('@/pages/ClaimsPages').then((m) => ({ default: m.ClaimReportPage })));
 const ClaimDetailPage = lazy(() => import('@/pages/ClaimsPages').then((m) => ({ default: m.ClaimDetailPage })));
 const BillingPage = lazy(() => import('@/pages/BillingPages').then((m) => ({ default: m.BillingPage })));
-const PaymentPage = lazy(() => import('@/pages/BillingPages').then((m) => ({ default: m.PaymentPage })));
+const PaymentPage = lazy(() => import('@/pages/BillingWorkflows').then((m) => ({ default: m.PaymentPage })));
+const PaymentMethodsPage = lazy(() => import('@/pages/BillingWorkflows').then((m) => ({ default: m.PaymentMethodsPage })));
+const ReinstatePage = lazy(() => import('@/pages/BillingWorkflows').then((m) => ({ default: m.ReinstatePage })));
+const EndorsePage = lazy(() => import('@/pages/EndorsePage'));
 const AutoPayPage = lazy(() => import('@/pages/BillingPages').then((m) => ({ default: m.AutoPayPage })));
 const ReportsPage = lazy(() => import('@/pages/ReportsPage'));
 const WorkQueuePage = lazy(() => import('@/pages/WorkQueuePage'));
@@ -53,6 +56,7 @@ function App() {
     <Route path="/customers" element={<CustomerSearchPage />} />
     <Route path="/customers/:id" element={<CustomerPage />} />
     <Route path="/policies/:number" element={<PolicyPage />} />
+    <Route path="/policies/:number/endorse" element={<EndorsePage />} />
 
     <Route path="/claims" element={<ClaimsListPage />} />
     <Route path="/claims/new" element={<ClaimReportPage />} />
@@ -61,6 +65,8 @@ function App() {
     <Route path="/billing" element={<BillingPage />} />
     <Route path="/billing/pay" element={<PaymentPage />} />
     <Route path="/billing/autopay" element={<AutoPayPage />} />
+    <Route path="/billing/methods" element={<PaymentMethodsPage />} />
+    <Route path="/billing/reinstate/:number" element={<ReinstatePage />} />
 
     <Route path="/reports" element={<Navigate to="/reports/performance" replace />} />
     <Route path="/reports/:id" element={<ReportsPage />} />

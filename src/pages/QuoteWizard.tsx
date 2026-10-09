@@ -1,6 +1,6 @@
 import { ReactNode, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
-import { AlertTriangle, Building2, Car, Check, CheckCircle2, FileText, Heart, Home, Mail, Pencil, Plus, Printer, Sailboat, Save, ShieldCheck, Trash2, Umbrella, UserPlus, Wand2 } from 'lucide-react';
+import { AlertTriangle, Building2, Car, Check, CheckCircle2, Download, FileText, Heart, Home, Mail, Pencil, Plus, Printer, Sailboat, Save, ShieldCheck, Trash2, Umbrella, UserPlus, Wand2 } from 'lucide-react';
 import '@/product-page.css';
 import QuoteHeader from '@/components/QuoteHeader';
 import { Field, Modal, StatusBadge } from '@/components/ui';
@@ -12,6 +12,7 @@ import { STATES } from '@/data/content';
 import { ageFrom, BI_OPTIONS, bmi, ErieQuoteResult, installmentSchedule, money, PAY_PLANS, payPlanLabel, PD_OPTIONS, ratedLifeClass, UM_OPTIONS } from '@/lib/rating';
 import { loadTemplates, saveTemplates } from '@/lib/templates';
 import { validCardExpiry } from '@/lib/validation';
+import { downloadDocument, openDocument, quoteProposalHtml } from '@/lib/documents';
 import type { Driver, Policy, PremiumBreakdown, ProductKey, Quote, Vehicle } from '@/data/types';
 
 type StepKey = 'underwriting' | 'drivers' | 'vehicles' | 'property' | 'coverages' | 'umbrella' | 'boat' | 'life' | 'commercial' | 'summary' | 'application' | 'issued';
@@ -569,9 +570,11 @@ function SummaryStep({ quote, update, rated, existing }: { quote: Quote; update:
   const [emailOpen, setEmailOpen] = useState(false);
   const [email, setEmail] = useState(quote.applicant.email);
   const savings = -rated.bundleCredits.reduce((s, c) => s + c.amount, 0);
+  // Proposal shows every plan re-rated (pay-in-full carries its own discount).
+  const proposal = () => quoteProposalHtml(quote, rated, PAY_PLANS.map((plan) => { const t = rateQuote(quote, existing, plan).total; const sch = installmentSchedule(t, plan, quote.autoPay); return { plan: payPlanLabel[plan], count: sch.count, perPayment: sch.perPayment, total: sch.totalCost }; }));
   const lineTitle = (key: string, name: string) => (key === 'auto' ? `${name} — ${quote.vehicles.length} vehicle(s), ${quote.drivers.length} driver(s)` : key === 'home' ? `${name} — ${quote.applicant.address}` : key === 'boat' ? `${name} — ${quote.boat.year} ${quote.boat.make} ${quote.boat.model}` : key.startsWith('commercial:') ? `${name} — ${quote.commercial.business.businessName}` : name);
   return <>
-    <div className="wizard-actions-row"><button type="button" className="outline-action" onClick={() => setEmailOpen(true)}><Mail size={13} /> EMAIL QUOTE</button><button type="button" className="outline-action" onClick={() => window.print()}><Printer size={13} /> PRINT</button></div>
+    <div className="wizard-actions-row"><button type="button" className="outline-action" onClick={() => setEmailOpen(true)}><Mail size={13} /> EMAIL QUOTE</button><button type="button" className="outline-action" onClick={() => window.print()}><Printer size={13} /> PRINT</button><button type="button" className="outline-action" onClick={() => openDocument(proposal(), `proposal-${quote.id}`)}><FileText size={13} /> PROPOSAL (PDF)</button><button type="button" className="outline-action" onClick={() => downloadDocument(proposal(), `proposal-${quote.id}`)}><Download size={13} /> DOWNLOAD</button></div>
     {rated.lines.map((l) => <div key={l.key}><h2 className="section-h">{lineIcon(l.key)} {lineTitle(l.key, l.breakdown.name ?? l.breakdown.product)}</h2><BreakdownTable breakdown={l.breakdown} /></div>)}
     <h2 className="section-h">Multi-policy bundle</h2>
     {rated.bundleCredits.length === 0 ? <p className="px-muted">No bundle credits yet. Auto + Home earns 10% on auto and 15% on home; adding an Umbrella earns another 5%; adding Commercial Lines earns a further 5% across the account.</p>

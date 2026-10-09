@@ -5,18 +5,18 @@
 :root {
   font-family: Arial, Helvetica, sans-serif;
   color: #252525;
-  background: #dedede;
+  background: #F4F5F7;
   font-synthesis: none;
   text-rendering: optimizeLegibility;
 }
 
 * { box-sizing: border-box; }
-body { margin: 0; min-width: 320px; background: #dedede; }
+body { margin: 0; min-width: 320px; background: #F4F5F7; }
 button, input, select { font: inherit; }
 button, a { -webkit-tap-highlight-color: transparent; }
 button { cursor: pointer; }
 
-.app-shell { min-height: 100vh; background: #dedede; }
+.app-shell { min-height: 100vh; background: #F4F5F7; }
 .topbar { position: relative; background: #fff; border-bottom: 1px solid #d8d8d8; }
 .topbar-inner { height: 54px; max-width: 1060px; margin: 0 auto; display: flex; align-items: center; gap: 26px; }
 .brand { display: flex; align-items: center; min-width: 240px; height: 100%; color: #1479b8; }
@@ -46,7 +46,7 @@ button { cursor: pointer; }
 .dashboard-grid { width: 1060px; margin: 0 auto; display: grid; grid-template-columns: repeat(4, 1fr); gap: 15px; align-items: start; }
 .portal-card { min-width: 0; background: white; border: 1px solid #d5d5d5; overflow: hidden; }
 .card-heading { height: 38px; padding: 0 15px; display: flex; align-items: center; color: white; background: #0877ad; font-size: 13px; font-weight: 700; }
-.card-heading.teal { background: #168e91; }
+.card-heading.teal { background: #117F81; }
 .card-heading.navy { background: #053761; }
 .card-body { position: relative; min-height: 202px; padding: 0 15px 22px; }
 .quote-card, .news-card { grid-row: span 2; }
@@ -64,8 +64,8 @@ input:focus, select:focus { border-color: #087bbb; box-shadow: 0 0 0 2px #087bbb
 select { appearance: auto; color: #777; }
 .name-fields input::placeholder, .icon-input input::placeholder { color: #aaa; }
 .helper { margin-top: 4px; color: #999; font-size: 11px; }
-.primary-button { height: 38px; min-width: 67px; padding: 0 15px; border: 0; background: #0677c4; color: #fff; font-size: 11px; font-weight: 700; }
-.primary-button:hover, .select-action button:hover { background: #005d9d; }
+.primary-button { height: 38px; min-width: 67px; padding: 0 15px; border: 0; background: #0275D8; color: #fff; font-size: 11px; font-weight: 700; }
+.primary-button:hover, .select-action button:hover { background: #0069D9; }
 .primary-button:active, .select-action button:active { transform: translateY(1px); }
 .align-right { display: block; margin: 13px 0 17px auto; }
 .link-list { display: flex; flex-direction: column; gap: 3px; }
@@ -81,7 +81,7 @@ select { appearance: auto; color: #777; }
 .portal-card:hover .footer-chevron svg { transform: translateY(2px); }
 .select-action { display: flex; gap: 4px; }
 .select-action select { flex: 1; min-width: 0; }
-.select-action button { width: 29px; flex: 0 0 29px; display: grid; place-items: center; padding: 0; border: 0; background: #0878bc; color: white; }
+.select-action button { width: 29px; flex: 0 0 29px; display: grid; place-items: center; padding: 0; border: 0; background: #0275D8; color: white; }
 .product-help-card .card-body { min-height: 260px; }
 .news-hero { display: flex; height: 112px; align-items: center; justify-content: space-between; }
 .news-hero button { width: 32px; height: 58px; padding: 0; border: 0; background: transparent; color: #8c8c8c; }

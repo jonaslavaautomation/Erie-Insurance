@@ -2,8 +2,9 @@ import { createContext, ReactNode, useCallback, useContext, useEffect, useMemo, 
 import { supabase } from '@/lib/supabase';
 import { ageFrom, calculateErieQuote, ErieQuoteResult, payPlanInstallments, QuoteLineKey, rateAuto, rateBoat, rateHome, rateLife, rateUmbrella } from '@/lib/rating';
 import { rateBusiness, rateCommercialAuto, rateContractors, rateWorkersComp } from '@/data/commercial';
+import { afterPayment, dueDates, rebill } from '@/lib/billing';
 import { AGENT, createSeed, defaultAutoCoverages, defaultBoat, defaultCommercial, defaultHomeCoverages, defaultLife, defaultProperty, defaultUmbrella, PortalData } from '@/data/seed';
-import type { AutoCoverages, BillingAccount, Claim, CommercialLine, Customer, Envelope, HomeCoverages, Lead, Payment, Policy, PolicyType, PremiumBreakdown, Quote, Toast } from '@/data/types';
+import type { AutoCoverages, BillingAccount, Claim, ClaimStatus, CommercialLine, Customer, Envelope, HomeCoverages, Lead, Payment, PaymentMethod, Policy, PolicyDocument, PolicyEndorsement, PolicyType, PremiumBreakdown, Quote, Toast } from '@/data/types';
 
 const STORAGE_KEY = 'erie-agentexchange-demo-v1';
 
@@ -18,7 +19,7 @@ const addMonths = (date: string, months: number) => { const d = new Date(`${date
 
 const policyPrefix: Record<PolicyType, string> = { Auto: 'A05', Home: 'H07', Boat: 'B09', Life: 'L22', Umbrella: 'U03', Business: 'Q97', 'Commercial Auto': 'CA1', 'Workers Comp': 'WC4' };
 // The most recent cancellation entry decides why a policy is pending cancel (history is newest first).
-const isNonPaymentCancel = (p: Policy) => /non-payment/i.test(p.history.find((h) => /cancel/i.test(h.text) && !/rescinded/i.test(h.text))?.text ?? '');
+export const isNonPaymentCancel = (p: Policy) => /non-payment/i.test(p.history.find((h) => /cancel/i.test(h.text) && !/rescinded/i.test(h.text))?.text ?? '');
 const clone = <T,>(value: T): T => JSON.parse(JSON.stringify(value)) as T;
 
 // Older saved data used a single "Roadside & Rentals" flag and fixed B/C/D percentages.
@@ -32,6 +33,27 @@ const adjusters = [
   { name: 'Jordan Pike', phone: '(800) 367-3743 x3318', email: 'jordan.pike@erieinsurance.example' },
 ];
 
+// Claim statuses were renamed to the FNOL tracker steps.
+const LEGACY_CLAIM_STATUS: Record<string, ClaimStatus> = { Reported: 'Claim Submitted', Assigned: 'Adjuster Assigned', 'Estimate Review': 'Estimate Approved', 'Repair In Progress': 'Estimate Approved' };
+
+// Future-dated payments post on their scheduled date.
+function applyScheduled(billing: BillingAccount[], policies: Policy[]): BillingAccount[] {
+  const now = today();
+  return billing.map((b) => {
+    const due = (b.scheduled ?? []).filter((p) => p.date <= now);
+    const policy = policies.find((p) => p.number === b.policyNumber);
+    if (!due.length || !policy) return b;
+    const posted = due.reduce((acc, p) => ({ ...acc, ...afterPayment(policy, acc, p.amount) }), b);
+    return { ...posted, scheduled: (b.scheduled ?? []).filter((p) => p.date > now), payments: [...due, ...b.payments] };
+  });
+}
+
+/** Cancellation effective date from the policy's most recent cancellation entry. */
+export function cancelDateOf(p: Policy) {
+  const entry = p.history.find((h) => /cancel/i.test(h.text) && !/rescinded|reinstated/i.test(h.text));
+  return entry?.text.match(/(?:effective|cancels|cancelled)\s+(\d{4}-\d{2}-\d{2})/i)?.[1];
+}
+
 function loadData(): PortalData {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
@@ -43,6 +65,9 @@ function loadData(): PortalData {
         ...data,
         quotes: data.quotes.map((q) => ({ ...q, boat: q.boat ?? { ...defaultBoat }, life: q.life ?? { ...defaultLife }, umbrella: q.umbrella ?? { ...defaultUmbrella }, commercial: q.commercial ?? clone(defaultCommercial), autoCoverages: migrateAuto(q.autoCoverages)!, homeCoverages: migrateHome(q.homeCoverages)! })),
         policies: data.policies.map((p) => ({ ...p, autoCoverages: migrateAuto(p.autoCoverages), homeCoverages: migrateHome(p.homeCoverages) })),
+        claims: data.claims.map((c) => ({ ...c, status: LEGACY_CLAIM_STATUS[c.status as string] ?? c.status })),
+        paymentMethods: data.paymentMethods ?? createSeed().paymentMethods,
+        billing: applyScheduled(data.billing, data.policies),
       };
     }
   } catch {
@@ -142,9 +167,14 @@ type StoreValue = PortalData & {
   updatePolicy: (number: string, patch: Partial<Policy>, historyText: string) => void;
   cancelPolicy: (number: string, reason: string, date: string) => void;
   reinstatePolicy: (number: string) => void;
+  endorsePolicy: (number: string, patch: Partial<Policy>, change: Omit<PolicyEndorsement, 'id' | 'processed' | 'by'>, documents: PolicyDocument[]) => PolicyEndorsement;
+  reinstateForNonPayment: (number: string, details: { pastDue: number; lateFee: number; reinstatementFee: number; method: string; noLapse: boolean; signedBy: string; cancelDate?: string }) => Payment;
+  savePaymentMethod: (method: Omit<PaymentMethod, 'id'> & { id?: string }) => PaymentMethod;
+  removePaymentMethod: (id: string) => void;
+  setDefaultPaymentMethod: (id: string) => void;
   addClaim: (claim: Omit<Claim, 'number' | 'status' | 'adjuster' | 'reserve' | 'paid' | 'notes' | 'payments' | 'reportedDate'>) => string;
   updateClaim: (number: string, patch: Partial<Claim>, note?: string) => void;
-  makePayment: (policyNumber: string, amount: number, method: string) => Payment;
+  makePayment: (policyNumber: string, amount: number, method: string, options?: { kind?: Payment['kind']; date?: string }) => Payment;
   adjustBalance: (policyNumber: string, delta: number) => void;
   setAutoPay: (policyNumber: string, enabled: boolean, account: string) => void;
   updateLead: (id: string, status: Lead['status']) => void;
@@ -278,10 +308,54 @@ export function PortalStoreProvider({ children }: { children: ReactNode }) {
     setData((current) => ({ ...current, policies: current.policies.map((p) => (p.number === number ? { ...p, status: 'Active', history: [{ date: today(), text: 'Policy reinstated with no lapse in coverage', by: AGENT.name }, ...p.history], documents: [{ name: 'Reinstatement Notice', date: today(), kind: 'Notice' }, ...p.documents] } : p)) }));
   }, []);
 
+  const endorsePolicy: StoreValue['endorsePolicy'] = useCallback((number, patch, change, documents) => {
+    const endorsement: PolicyEndorsement = { ...change, id: `END-${randomDigits(6)}`, processed: today(), by: AGENT.name };
+    setData((current) => ({
+      ...current,
+      policies: current.policies.map((p) => (p.number === number ? { ...p, ...patch, endorsements: [endorsement, ...(p.endorsements ?? [])], documents: [...documents, ...p.documents], history: [{ date: today(), text: `${change.type}: ${change.description} — effective ${change.effective}. Premium ${change.proRata >= 0 ? '+' : '−'}${Math.abs(change.proRata).toFixed(2)} pro rata`, by: AGENT.name }, ...p.history] } : p)),
+      billing: current.billing.map((b) => { if (b.policyNumber !== number) return b; const p = current.policies.find((x) => x.number === number)!; const balance = Math.max(0, Math.round((b.balance + change.proRata) * 100) / 100); return { ...b, balance, ...rebill(p, balance, b.nextDueDate) }; }),
+    }));
+    return endorsement;
+  }, []);
+
+  const reinstateForNonPayment: StoreValue['reinstateForNonPayment'] = useCallback((number, d) => {
+    const total = Math.round((d.pastDue + d.lateFee + d.reinstatementFee) * 100) / 100;
+    const payment: Payment = { id: `P${randomDigits(6)}`, date: today(), amount: total, method: d.method, confirmation: `EP-${randomDigits(8)}`, policyNumber: number, kind: 'Reinstatement' };
+    setData((current) => ({
+      ...current,
+      // Fees are paid on top of premium, so only the past-due premium reduces the balance.
+      billing: current.billing.map((b) => (b.policyNumber === number ? { ...b, ...(() => { const p = current.policies.find((x) => x.number === number)!; const balance = Math.max(0, Math.round((b.balance - d.pastDue) * 100) / 100); return { balance, ...rebill(p, balance, dueDates(p).find((x) => x > today()) ?? b.nextDueDate) }; })(), payments: [{ ...payment, amount: d.pastDue, kind: 'Installment' }, ...(d.lateFee ? [{ ...payment, id: `${payment.id}-L`, amount: d.lateFee, kind: 'Late fee' as const }] : []), ...(d.reinstatementFee ? [{ ...payment, id: `${payment.id}-R`, amount: d.reinstatementFee, kind: 'Reinstatement' as const }] : []), ...b.payments] } : b)),
+      policies: current.policies.map((p) => (p.number === number ? { ...p, status: 'Active', history: [{ date: today(), text: `Reinstated after non-payment — ${d.noLapse ? 'no lapse in coverage' : `lapse from ${d.cancelDate ?? 'cancellation'} to ${today()}`}. Statement of no known loss signed by ${d.signedBy}. Paid ${total.toFixed(2)} (${payment.confirmation})`, by: AGENT.name }, ...p.history], documents: [{ name: 'Notice of Reinstatement', date: today(), kind: 'Notice' }, ...p.documents] } : p)),
+    }));
+    return payment;
+  }, []);
+
+  const savePaymentMethod: StoreValue['savePaymentMethod'] = useCallback((method) => {
+    const saved: PaymentMethod = { ...method, id: method.id ?? `PM-${randomDigits(6)}` };
+    setData((current) => {
+      const others = (current.paymentMethods ?? []).filter((m) => m.id !== saved.id);
+      const first = !others.some((m) => m.customerId === saved.customerId);
+      const next = { ...saved, isDefault: saved.isDefault || first };
+      return { ...current, paymentMethods: [...others.map((m) => (next.isDefault && m.customerId === next.customerId ? { ...m, isDefault: false } : m)), next] };
+    });
+    return saved;
+  }, []);
+  const removePaymentMethod = useCallback((id: string) => setData((current) => {
+    const removed = current.paymentMethods.find((m) => m.id === id);
+    const rest = current.paymentMethods.filter((m) => m.id !== id);
+    // Keep one default per customer.
+    const heirId = removed?.isDefault ? rest.find((m) => m.customerId === removed.customerId)?.id : undefined;
+    return { ...current, paymentMethods: rest.map((m) => (m.id === heirId ? { ...m, isDefault: true } : m)) };
+  }), []);
+  const setDefaultPaymentMethod = useCallback((id: string) => setData((current) => {
+    const target = current.paymentMethods.find((m) => m.id === id);
+    return target ? { ...current, paymentMethods: current.paymentMethods.map((m) => (m.customerId === target.customerId ? { ...m, isDefault: m.id === id } : m)) } : current;
+  }), []);
+
   const addClaim: StoreValue['addClaim'] = useCallback((claim) => {
-    const number = `CLM-26-${randomDigits(7)}`;
+    const number = `CLM-${new Date().getFullYear()}-${randomDigits(5)}`;
     const adjuster = adjusters[Math.floor(Math.random() * adjusters.length)];
-    setData((current) => ({ ...current, claims: [{ ...claim, number, status: 'Assigned', adjuster, reserve: 0, paid: 0, reportedDate: today(), notes: [{ date: today(), author: AGENT.name, text: 'First notice of loss submitted through AgentExchange.' }, { date: today(), author: 'System', text: `Claim assigned to ${adjuster.name}. Customer contact expected within 24 hours.` }], payments: [] }, ...current.claims] }));
+    setData((current) => ({ ...current, claims: [{ ...claim, number, status: 'Adjuster Assigned', adjuster, reserve: 0, paid: 0, reportedDate: today(), notes: [{ date: today(), author: AGENT.name, text: 'First notice of loss submitted through AgentExchange.' }, { date: today(), author: 'System', text: `Claim assigned to ${adjuster.name}. Customer contact expected within 24 hours.` }], payments: [] }, ...current.claims] }));
     return number;
   }, []);
 
@@ -289,22 +363,28 @@ export function PortalStoreProvider({ children }: { children: ReactNode }) {
     setData((current) => ({ ...current, claims: current.claims.map((c) => (c.number === number ? { ...c, ...patch, notes: note ? [...(patch.notes ?? c.notes), { date: today(), author: AGENT.name, text: note }] : (patch.notes ?? c.notes) } : c)) }));
   }, []);
 
-  const makePayment = useCallback((policyNumber: string, amount: number, method: string) => {
-    const payment: Payment = { id: `P${randomDigits(6)}`, date: today(), amount, method, confirmation: `EP-${randomDigits(8)}`, policyNumber };
+  const makePayment = useCallback((policyNumber: string, amount: number, method: string, options: { kind?: Payment['kind']; date?: string } = {}) => {
+    const date = options.date && options.date > today() ? options.date : today();
+    const payment: Payment = { id: `P${randomDigits(6)}`, date, amount, method, confirmation: `EP-${randomDigits(8)}`, policyNumber, kind: options.kind ?? 'Installment' };
+    // Future-dated payments are held as scheduled and post on their date.
+    if (date > today()) {
+      setData((current) => ({ ...current, billing: current.billing.map((b) => (b.policyNumber === policyNumber ? { ...b, scheduled: [...(b.scheduled ?? []), payment] } : b)) }));
+      return payment;
+    }
     setData((current) => {
       const account = current.billing.find((b) => b.policyNumber === policyNumber);
       // A non-payment cancellation is rescinded only once the past-due amount is fully paid.
       const curesPastDue = !!account && amount >= account.minimumDue - 0.005;
       return {
         ...current,
-        billing: current.billing.map((b) => (b.policyNumber === policyNumber ? { ...b, balance: Math.max(0, Math.round((b.balance - amount) * 100) / 100), minimumDue: Math.max(0, Math.round((b.minimumDue - amount) * 100) / 100), payments: [payment, ...b.payments] } : b)),
+        billing: current.billing.map((b) => { if (b.policyNumber !== policyNumber) return b; const p = current.policies.find((x) => x.number === policyNumber); return { ...b, ...(p ? afterPayment(p, b, amount) : { balance: Math.max(0, Math.round((b.balance - amount) * 100) / 100), minimumDue: Math.max(0, Math.round((b.minimumDue - amount) * 100) / 100) }), payments: [payment, ...b.payments] }; }),
         policies: current.policies.map((p) => (p.number === policyNumber && curesPastDue && p.status === 'Pending Cancel' && isNonPaymentCancel(p) ? { ...p, status: 'Active', history: [{ date: today(), text: `Payment ${payment.confirmation} received — non-payment cancellation rescinded`, by: 'System' }, ...p.history] } : p)),
       };
     });
     return payment;
   }, []);
 
-  const adjustBalance = useCallback((policyNumber: string, delta: number) => setData((current) => ({ ...current, billing: current.billing.map((b) => (b.policyNumber === policyNumber ? { ...b, balance: Math.max(0, Math.round((b.balance + delta) * 100) / 100) } : b)) })), []);
+  const adjustBalance = useCallback((policyNumber: string, delta: number) => setData((current) => ({ ...current, billing: current.billing.map((b) => { if (b.policyNumber !== policyNumber) return b; const p = current.policies.find((x) => x.number === policyNumber); const balance = Math.max(0, Math.round((b.balance + delta) * 100) / 100); return { ...b, balance, ...(p ? rebill(p, balance, b.nextDueDate) : {}) }; }) })), []);
 
   const setAutoPay = useCallback((policyNumber: string, enabled: boolean, account: string) => {
     setData((current) => ({ ...current, policies: current.policies.map((p) => (p.number === policyNumber ? { ...p, autoPay: enabled, history: [{ date: today(), text: enabled ? `Enrolled in AutoPay (${account}); installment fees waived` : 'AutoPay cancelled', by: AGENT.name }, ...p.history] } : p)) }));
@@ -320,7 +400,7 @@ export function PortalStoreProvider({ children }: { children: ReactNode }) {
     window.dispatchEvent(new Event('erie-work-dismissed'));
   }, []);
 
-  const value = useMemo<StoreValue>(() => ({ ...data, toasts, notify, dismissToast, saveQuote, deleteQuotes, archiveQuotes, issueQuote, updateCustomer, updatePolicy, cancelPolicy, reinstatePolicy, addClaim, updateClaim, makePayment, adjustBalance, setAutoPay, updateLead, addEnvelope, updateEnvelope, resetDemo }), [data, toasts, notify, dismissToast, saveQuote, deleteQuotes, archiveQuotes, issueQuote, updateCustomer, updatePolicy, cancelPolicy, reinstatePolicy, addClaim, updateClaim, makePayment, adjustBalance, setAutoPay, updateLead, addEnvelope, updateEnvelope, resetDemo]);
+  const value = useMemo<StoreValue>(() => ({ ...data, toasts, notify, dismissToast, saveQuote, deleteQuotes, archiveQuotes, issueQuote, updateCustomer, updatePolicy, cancelPolicy, reinstatePolicy, endorsePolicy, reinstateForNonPayment, savePaymentMethod, removePaymentMethod, setDefaultPaymentMethod, addClaim, updateClaim, makePayment, adjustBalance, setAutoPay, updateLead, addEnvelope, updateEnvelope, resetDemo }), [data, toasts, notify, dismissToast, saveQuote, deleteQuotes, archiveQuotes, issueQuote, updateCustomer, updatePolicy, cancelPolicy, reinstatePolicy, endorsePolicy, reinstateForNonPayment, savePaymentMethod, removePaymentMethod, setDefaultPaymentMethod, addClaim, updateClaim, makePayment, adjustBalance, setAutoPay, updateLead, addEnvelope, updateEnvelope, resetDemo]);
 
   return <StoreContext.Provider value={value}>{children}</StoreContext.Provider>;
 }

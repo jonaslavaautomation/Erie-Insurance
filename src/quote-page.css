@@ -24,9 +24,9 @@
 .address-row { display: grid; grid-template-columns: 1.15fr .5fr .72fr; gap: 7px; }
 .dob-inputs { display: grid; grid-template-columns: 1fr 1fr 1.45fr; gap: 7px; }
 .quote-form-footer { display: flex; justify-content: flex-end; margin: 27px -34px 0; padding: 18px 34px; border-top: 1px solid #e0e5e9; background: #fafbfc; }
-.quote-primary-button { min-height: 36px; padding: 0 17px; border: 0; border-radius: 2px; background: #0878c5; color: #fff; font-size: 11px; font-weight: 700; letter-spacing: .15px; box-shadow: 0 1px 1px #002e5026; }
+.quote-primary-button { min-height: 36px; padding: 0 17px; border: 0; border-radius: 2px; background: #0275D8; color: #fff; font-size: 11px; font-weight: 700; letter-spacing: .15px; box-shadow: 0 1px 1px #002e5026; }
 .quote-primary-button span { margin-left: 13px; font-size: 18px; line-height: 0; vertical-align: -1px; }
-.quote-primary-button:hover { background: #0064a8; }
+.quote-primary-button:hover { background: #0069D9; }
 .started-message { margin: 0 -34px; padding: 10px 34px; color: #197043; background: #ecf8f0; border-top: 1px solid #c8e9d4; font-size: 12px; }
 .search-quotes-panel { margin-top: 30px; padding-top: 27px; }
 .search-quotes-panel h2 { padding: 0 34px; }

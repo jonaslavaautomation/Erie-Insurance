@@ -35,7 +35,7 @@
 .product-list { overflow: hidden; }
 .product-row + .product-row { border-top: 1px solid #d8e0e6; }
 .product-row-header { min-height: 28px; padding: 5px 9px; display: flex; align-items: center; gap: 5px; background: #eaf3fa; color: #234a66; font-size: 11px; font-weight: 700; cursor: pointer; }
-.product-row-header input { width: 13px; height: 13px; margin: 0; accent-color: #0878c5; }
+.product-row-header input { width: 13px; height: 13px; margin: 0; accent-color: #0275D8; }
 .product-row-body { min-height: 52px; padding: 13px 0 13px 116px; display: flex; align-items: flex-start; gap: 9px; background: #fff; }
 .agent-label { padding-top: 7px; color: #3d5366; font-size: 11px; font-weight: 700; white-space: nowrap; }
 .agent-control { position: relative; }
@@ -48,8 +48,8 @@
 .outline-action, .continue-action { min-width: 68px; height: 30px; padding: 0 14px; border-radius: 2px; font-size: 10px; font-weight: 700; }
 .outline-action { border: 1px solid #9eacb6; background: #fff; color: #24455f; }
 .outline-action:hover { border-color: #0078c2; color: #0078c2; }
-.continue-action { border: 1px solid #0878c5; background: #0878c5; color: #fff; }
-.continue-action:hover { background: #0065a6; }
+.continue-action { border: 1px solid #0275D8; background: #0275D8; color: #fff; }
+.continue-action:hover { background: #0069D9; }
 
 @media (max-width: 760px) {
   .product-topbar { padding: 0 20px; }

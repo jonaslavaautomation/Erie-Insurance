@@ -42,7 +42,9 @@ function driverFactor(driver: Driver) {
 export const meetsUmbrellaAutoMinimum = (bi: string, pd: string) => ['250/500', '500/500', '500 CSL'].includes(bi) && ['100,000', '250,000'].includes(pd);
 export const UMBRELLA_HOME_MINIMUM = 300000;
 
-export function rateAuto(state: string, drivers: Driver[], vehicles: Vehicle[], coverages: AutoCoverages, options: { multiPolicy: boolean; payPlan: PayPlan; autoPay: boolean }): PremiumBreakdown {
+export function rateAuto(state: string, allDrivers: Driver[], vehicles: Vehicle[], coverages: AutoCoverages, options: { multiPolicy: boolean; payPlan: PayPlan; autoPay: boolean }): PremiumBreakdown {
+  // Excluded drivers (named driver exclusion) are not rated.
+  const drivers = allDrivers.filter((d) => !d.excluded);
   const territory = stateFactor[state] ?? 1;
   const driverLoad = drivers.length === 0 ? 1 : Math.max(...drivers.map(driverFactor));
   const lines: PremiumLine[] = [];

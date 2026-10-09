@@ -2,7 +2,7 @@ export type ProductKey = 'auto' | 'home' | 'umbrella' | 'boat' | 'life' | 'comme
 export type PolicyType = 'Auto' | 'Home' | 'Boat' | 'Life' | 'Umbrella' | 'Business' | 'Commercial Auto' | 'Workers Comp';
 export type PolicyStatus = 'Active' | 'Pending Cancel' | 'Cancelled' | 'Pending Issue';
 export type QuoteStatus = 'Quote' | 'Referred' | 'Application' | 'Issued' | 'Declined' | 'Archived';
-export type ClaimStatus = 'Reported' | 'Assigned' | 'Inspection' | 'Estimate Review' | 'Repair In Progress' | 'Payment Issued' | 'Closed';
+export type ClaimStatus = 'Claim Submitted' | 'Adjuster Assigned' | 'Inspection' | 'Estimate Approved' | 'Payment Issued' | 'Closed';
 export type PayPlan = 'Annual' | 'Semi-Annual' | 'Quarterly' | '9 Month' | 'Monthly';
 
 export type Customer = {
@@ -35,6 +35,8 @@ export type Driver = {
   accidents: number;
   driverTraining: boolean;
   goodStudent: boolean;
+  // Named driver exclusion (form AU-220): listed on the policy but not rated or covered.
+  excluded?: boolean;
 };
 
 export type Vehicle = {
@@ -320,13 +322,58 @@ export type Policy = {
   workersComp?: WorkersCompDetails;
   // Distinguishes monoline commercial lines that share a policy type, e.g. Commercial Property vs. BOP.
   policyForm?: 'Commercial Property' | 'Trucking';
+  mortgagees?: Mortgagee[];
+  endorsements?: PolicyEndorsement[];
   description: string;
   documents: PolicyDocument[];
   history: HistoryEntry[];
   quoteId?: string;
 };
 
-export type Payment = { id: string; date: string; amount: number; method: string; confirmation: string; policyNumber: string };
+export type Payment = { id: string; date: string; amount: number; method: string; confirmation: string; policyNumber: string; kind?: 'Installment' | 'Late fee' | 'Reinstatement' | 'Down payment' };
+
+// Lender or loss payee on a home or auto policy. The clause is printed on evidence of insurance.
+export type Mortgagee = {
+  id: string;
+  role: 'First mortgagee' | 'Second mortgagee' | 'Loss payee' | 'Lienholder';
+  name: string;
+  clause: 'ISAOA/ATIMA' | 'ISAOA' | 'ATIMA' | 'None';
+  loanNumber: string;
+  address: string;
+  city: string;
+  state: string;
+  zip: string;
+  // For auto loss payees, the vehicle the interest applies to.
+  vehicleId?: string;
+};
+
+export type EndorsementType = 'Add vehicle' | 'Replace vehicle' | 'Remove vehicle' | 'Add driver' | 'Change driver' | 'Exclude driver' | 'Remove driver' | 'Coverage change' | 'Garaging address' | 'Mortgagee / loss payee';
+
+// One processed policy change, kept on the policy for the dec page and history.
+export type PolicyEndorsement = {
+  id: string;
+  type: EndorsementType;
+  description: string;
+  processed: string;
+  effective: string;
+  premiumBefore: number;
+  premiumAfter: number;
+  proRata: number;
+  by: string;
+};
+
+// Saved card or bank account for one-time payments and EriePay AutoPay.
+export type PaymentMethod = {
+  id: string;
+  customerId: string;
+  kind: 'card' | 'ach';
+  brand: 'Visa' | 'Mastercard' | 'Amex' | 'Discover' | 'Checking' | 'Savings';
+  last4: string;
+  holder: string;
+  expiry?: string;
+  bankName?: string;
+  isDefault: boolean;
+};
 
 export type BillingAccount = {
   policyNumber: string;
@@ -334,6 +381,8 @@ export type BillingAccount = {
   nextDueDate: string;
   minimumDue: number;
   payments: Payment[];
+  // Future-dated payments, applied automatically on their date.
+  scheduled?: Payment[];
 };
 
 export type ClaimNote = { date: string; author: string; text: string };
@@ -360,7 +409,11 @@ export type Claim = {
   notes: ClaimNote[];
   payments: ClaimPayment[];
   attachments: string[];
+  thirdParty?: ThirdParty;
+  lossTime?: string;
 };
+
+export type ThirdParty = { name: string; phone: string; insurer: string; policyNumber: string; vehicle: string; plate: string };
 
 export type Lead = {
   id: string;

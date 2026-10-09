@@ -1,12 +1,10 @@
 import { useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
-import { CheckCircle2, CreditCard, Printer, RefreshCcw } from 'lucide-react';
+import { CreditCard, RefreshCcw } from 'lucide-react';
 import PortalLayout from '@/components/PortalLayout';
-import { validCardExpiry } from '@/lib/validation';
 import { Empty, Field, PageTitle, Panel, StatusBadge } from '@/components/ui';
-import { fullName, today, usePortal } from '@/data/store';
+import { fullName, isNonPaymentCancel, today, usePortal } from '@/data/store';
 import { INSTALLMENT_FEE, money } from '@/lib/rating';
-import type { Payment } from '@/data/types';
 
 export function BillingPage() {
   const { billing, policies, customers } = usePortal();
@@ -23,80 +21,13 @@ export function BillingPage() {
   const recent = billing.flatMap((b) => b.payments).sort((a, b) => b.date.localeCompare(a.date)).slice(0, 6);
 
   return <PortalLayout><main className="px-page">
-    <PageTitle crumbs={[{ label: 'Billing & Payments' }]} title="Payment Center" subtitle="Take payments, review billing accounts and manage AutoPay. Customer billing line: (800) 458-0811." actions={<><Link className="px-btn ghost" to="/billing/autopay"><RefreshCcw size={14} /> AutoPay enrollment</Link><Link className="px-btn" to="/billing/pay"><CreditCard size={14} /> One-time payment</Link></>} />
+    <PageTitle crumbs={[{ label: 'Billing & Payments' }]} title="Payment Center" subtitle="Take payments, review billing accounts and manage AutoPay. Customer billing line: (800) 458-0811." actions={<><Link className="px-btn ghost" to="/billing/methods"><CreditCard size={14} /> Payment methods</Link><Link className="px-btn ghost" to="/billing/autopay"><RefreshCcw size={14} /> AutoPay enrollment</Link><Link className="px-btn" to="/billing/pay"><CreditCard size={14} /> One-time payment</Link></>} />
     <div className="stat-row cards"><button type="button" onClick={() => setFilter('all')}><span>Billing accounts</span><strong>{billing.length}</strong></button><button type="button" onClick={() => setFilter('due')}><span>Amount due (all)</span><strong>{money(billing.reduce((t, b) => t + b.minimumDue, 0), true)}</strong></button><button type="button" className={pastDue.length ? 'alert' : ''} onClick={() => setFilter('pastdue')}><span>Past due</span><strong>{pastDue.length} account{pastDue.length === 1 ? '' : 's'}</strong></button><div><span>On AutoPay</span><strong>{policies.filter((p) => p.autoPay).length} of {policies.length}</strong></div></div>
     <Panel>
       <div className="px-toolbar"><input className="px-search" value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Policy number or insured name" aria-label="Search billing accounts" /><div className="px-chips">{[['all', 'All'], ['due', 'Amount due'], ['pastdue', 'Past due']].map(([id, label]) => <button key={id} type="button" className={filter === id ? 'on' : ''} onClick={() => setFilter(id)}>{label}</button>)}</div>{customerId && <Link to="/billing" className="link-button">Clear customer filter</Link>}</div>
-      {rows.length === 0 ? <Empty>No billing accounts match.</Empty> : <div className="px-table-wrap"><table className="px-table"><thead><tr><th>Policy</th><th>Insured</th><th>Plan</th><th>Minimum due</th><th>Due date</th><th>Balance</th><th>AutoPay</th><th /></tr></thead><tbody>{rows.map(({ b, policy, customer }) => { const late = b.minimumDue > 0 && b.nextDueDate < today(); return <tr key={b.policyNumber} className="clickable" onClick={() => navigate(`/policies/${b.policyNumber}`)}><td><Link className="mono" to={`/policies/${b.policyNumber}`} onClick={(e) => e.stopPropagation()}>{b.policyNumber}</Link> <small className="cell-note">{policy.type}</small></td><td>{customer ? <Link to={`/customers/${customer.id}`} onClick={(e) => e.stopPropagation()}>{fullName(customer)}</Link> : '—'}</td><td>{policy.payPlan}</td><td>{money(b.minimumDue, true)}</td><td>{b.minimumDue > 0 ? b.nextDueDate : '—'} {late && <StatusBadge status="Past due" />}</td><td>{money(b.balance, true)}</td><td>{policy.autoPay ? 'Yes' : <Link to={`/billing/autopay?policy=${b.policyNumber}`} onClick={(e) => e.stopPropagation()}>Enroll</Link>}</td><td onClick={(e) => e.stopPropagation()}>{b.balance > 0 && <Link className="px-btn small" to={`/billing/pay?policy=${b.policyNumber}`}>Pay</Link>}</td></tr>; })}</tbody></table></div>}
+      {rows.length === 0 ? <Empty>No billing accounts match.</Empty> : <div className="px-table-wrap"><table className="px-table"><thead><tr><th>Policy</th><th>Insured</th><th>Plan</th><th>Minimum due</th><th>Due date</th><th>Balance</th><th>AutoPay</th><th /></tr></thead><tbody>{rows.map(({ b, policy, customer }) => { const late = b.minimumDue > 0 && b.nextDueDate < today(); return <tr key={b.policyNumber} className="clickable" onClick={() => navigate(`/policies/${b.policyNumber}`)}><td><Link className="mono" to={`/policies/${b.policyNumber}`} onClick={(e) => e.stopPropagation()}>{b.policyNumber}</Link> <small className="cell-note">{policy.type}</small></td><td>{customer ? <Link to={`/customers/${customer.id}`} onClick={(e) => e.stopPropagation()}>{fullName(customer)}</Link> : '—'}</td><td>{policy.payPlan}</td><td>{money(b.minimumDue, true)}</td><td>{b.minimumDue > 0 ? b.nextDueDate : '—'} {policy.status === 'Cancelled' ? <StatusBadge status="Cancelled" /> : late && <StatusBadge status="Past due" />}</td><td>{money(b.balance, true)}</td><td>{policy.autoPay ? 'Yes' : <Link to={`/billing/autopay?policy=${b.policyNumber}`} onClick={(e) => e.stopPropagation()}>Enroll</Link>}</td><td onClick={(e) => e.stopPropagation()}>{policy.status === 'Cancelled' && isNonPaymentCancel(policy) ? <Link className="px-btn small" to={`/billing/reinstate/${b.policyNumber}`}>Reinstate</Link> : b.balance > 0 && <Link className="px-btn small" to={`/billing/pay?policy=${b.policyNumber}`}>Pay</Link>}</td></tr>; })}</tbody></table></div>}
     </Panel>
     <Panel title="Recent payments">{recent.length === 0 ? <Empty>No payments.</Empty> : <table className="px-table"><thead><tr><th>Date</th><th>Policy</th><th>Amount</th><th>Method</th><th>Confirmation</th></tr></thead><tbody>{recent.map((p) => <tr key={p.id}><td>{p.date}</td><td><Link className="mono" to={`/policies/${p.policyNumber}`}>{p.policyNumber}</Link></td><td>{money(p.amount, true)}</td><td>{p.method}</td><td className="mono">{p.confirmation}</td></tr>)}</tbody></table>}</Panel>
-  </main></PortalLayout>;
-}
-
-export function PaymentPage() {
-  const [params] = useSearchParams();
-  const { billing, policies, customers, makePayment, notify } = usePortal();
-  const customerId = params.get('customer');
-  const [policyNumber, setPolicyNumber] = useState(params.get('policy') ?? '');
-  const [lookup, setLookup] = useState('');
-  const [amountType, setAmountType] = useState<'minimum' | 'balance' | 'other'>('minimum');
-  const [other, setOther] = useState('');
-  const [method, setMethod] = useState<'eft' | 'card'>('eft');
-  const [pay, setPay] = useState({ name: '', routing: '', account: '', accountType: 'Checking', card: '', exp: '', cvv: '', zip: '' });
-  const [errors, setErrors] = useState<string[]>([]);
-  const [receipt, setReceipt] = useState<Payment | null>(null);
-
-  const account = billing.find((b) => b.policyNumber === policyNumber);
-  const policy = policies.find((p) => p.number === policyNumber);
-  const customer = policy ? customers.find((c) => c.id === policy.customerId) : undefined;
-  const choices = billing.filter((b) => { const p = policies.find((x) => x.number === b.policyNumber); const c = customers.find((x) => x.id === p?.customerId); return (!customerId || p?.customerId === customerId) && `${b.policyNumber} ${c ? fullName(c) : ''}`.toLowerCase().includes(lookup.toLowerCase()); });
-  const amount = !account ? 0 : amountType === 'minimum' ? account.minimumDue : amountType === 'balance' ? account.balance : Number(other) || 0;
-
-  const submit = () => {
-    const problems: string[] = [];
-    if (!account) problems.push('Select a policy.');
-    if (amount <= 0) problems.push('Payment amount must be greater than $0.');
-    if (account && amount > account.balance + 0.001) problems.push(`Amount cannot exceed the remaining balance of ${money(account.balance, true)}.`);
-    if (!pay.name.trim()) problems.push('Enter the payer name.');
-    if (method === 'eft' && (!/^\d{9}$/.test(pay.routing) || pay.account.length < 4)) problems.push('Enter a 9-digit routing number and an account number.');
-    if (method === 'card' && (!/^\d{15,16}$/.test(pay.card.replace(/\s/g, '')) || !validCardExpiry(pay.exp) || !/^\d{3,4}$/.test(pay.cvv))) problems.push('Enter a valid card number, expiration (MM/YY) and CVV.');
-    setErrors(problems);
-    if (problems.length || !account) return;
-    const label = method === 'eft' ? `${pay.accountType} ••${pay.account.slice(-4)}` : `Card ••${pay.card.replace(/\s/g, '').slice(-4)}`;
-    const payment = makePayment(account.policyNumber, Math.round(amount * 100) / 100, label);
-    setReceipt(payment);
-    notify(`Payment of ${money(payment.amount, true)} applied. Confirmation ${payment.confirmation}.`);
-  };
-
-  if (receipt) return <PortalLayout><main className="px-page narrow">
-    <PageTitle crumbs={[{ label: 'Billing', to: '/billing' }, { label: 'Payment receipt' }]} title="Payment received" />
-    <Panel><div className="issued-hero printable"><CheckCircle2 size={40} /><div><h2>{money(receipt.amount, true)} applied to {receipt.policyNumber}</h2><p>Confirmation <strong className="mono">{receipt.confirmation}</strong> · {receipt.date} · {receipt.method}</p><p>Payments post the same day when made before 8 p.m. ET.</p></div></div>
-      <div className="issued-actions"><button type="button" className="outline-action" onClick={() => window.print()}><Printer size={13} /> PRINT RECEIPT</button><Link className="outline-action" to={`/policies/${receipt.policyNumber}`}>VIEW POLICY</Link>{!policy?.autoPay && <Link className="outline-action" to={`/billing/autopay?policy=${receipt.policyNumber}`}>ENROLL IN AUTOPAY</Link>}<Link className="continue-action" to="/billing">BACK TO PAYMENT CENTER</Link></div></Panel>
-  </main></PortalLayout>;
-
-  return <PortalLayout><main className="px-page narrow">
-    <PageTitle crumbs={[{ label: 'Billing', to: '/billing' }, { label: 'One-time payment' }]} title="One-time Payment" subtitle="Take a payment on behalf of the customer. A receipt is emailed to the address on file." />
-    <Panel title="1. Policy">
-      {account && policy ? <div className="selected-row"><div><strong>{policy.type} · <span className="mono">{policy.number}</span></strong><small>{customer ? fullName(customer) : ''} · Minimum due {money(account.minimumDue, true)} by {account.nextDueDate} · Balance {money(account.balance, true)}</small></div><button type="button" className="link-button" onClick={() => setPolicyNumber('')}>Change</button></div>
-        : <><Field label="Find policy"><input value={lookup} onChange={(e) => setLookup(e.target.value)} placeholder="Policy number or insured name" /></Field><div className="select-list">{choices.map((b) => { const p = policies.find((x) => x.number === b.policyNumber); const c = customers.find((x) => x.id === p?.customerId); return <label key={b.policyNumber}><input type="radio" name="pol" onChange={() => setPolicyNumber(b.policyNumber)} /><span><strong>{p?.type} · {b.policyNumber}</strong><small>{c ? fullName(c) : ''} · Due {money(b.minimumDue, true)}</small></span></label>; })}</div></>}
-    </Panel>
-    {account && <>
-      <Panel title="2. Amount"><div className="plan-grid">
-        <label className={`plan ${amountType === 'minimum' ? 'on' : ''}`}><input type="radio" checked={amountType === 'minimum'} onChange={() => setAmountType('minimum')} /><strong>Minimum due</strong><span>{money(account.minimumDue, true)}</span></label>
-        <label className={`plan ${amountType === 'balance' ? 'on' : ''}`}><input type="radio" checked={amountType === 'balance'} onChange={() => setAmountType('balance')} /><strong>Remaining balance</strong><span>{money(account.balance, true)}</span></label>
-        <label className={`plan ${amountType === 'other' ? 'on' : ''}`}><input type="radio" checked={amountType === 'other'} onChange={() => setAmountType('other')} /><strong>Other amount</strong><input type="number" min={0} step="0.01" value={other} onFocus={() => setAmountType('other')} onChange={(e) => setOther(e.target.value)} placeholder="0.00" aria-label="Other amount" /></label>
-      </div></Panel>
-      <Panel title="3. Payment method">
-        <div className="pay-tabs"><button type="button" className={method === 'eft' ? 'on' : ''} onClick={() => setMethod('eft')}>Bank account</button><button type="button" className={method === 'card' ? 'on' : ''} onClick={() => setMethod('card')}>Debit / credit card</button></div>
-        <div className="px-grid3"><Field label="Name on account" required className="span3"><input value={pay.name} onChange={(e) => setPay({ ...pay, name: e.target.value })} placeholder={customer ? fullName(customer) : ''} /></Field>
-          {method === 'eft' ? <><Field label="Account type"><select value={pay.accountType} onChange={(e) => setPay({ ...pay, accountType: e.target.value })}><option>Checking</option><option>Savings</option></select></Field><Field label="Routing number" required><input value={pay.routing} inputMode="numeric" onChange={(e) => setPay({ ...pay, routing: e.target.value.replace(/\D/g, '').slice(0, 9) })} /></Field><Field label="Account number" required><input value={pay.account} inputMode="numeric" onChange={(e) => setPay({ ...pay, account: e.target.value.replace(/\D/g, '').slice(0, 17) })} /></Field></>
-            : <><Field label="Card number" required><input value={pay.card} inputMode="numeric" onChange={(e) => setPay({ ...pay, card: e.target.value.replace(/[^\d ]/g, '').slice(0, 19) })} /></Field><Field label="Expiration" required><input value={pay.exp} placeholder="MM/YY" onChange={(e) => setPay({ ...pay, exp: e.target.value.slice(0, 5) })} /></Field><Field label="CVV" required><input value={pay.cvv} inputMode="numeric" onChange={(e) => setPay({ ...pay, cvv: e.target.value.replace(/\D/g, '').slice(0, 4) })} /></Field></>}
-        </div>
-        <p className="px-muted">Visa, Mastercard, Discover and American Express accepted. Test routing number: 075000022.</p>
-      </Panel>
-      {errors.length > 0 && <ul className="quote-errors" role="alert">{errors.map((e) => <li key={e}>{e}</li>)}</ul>}
-      <div className="px-form-actions"><Link className="px-btn ghost" to="/billing">Cancel</Link><button type="button" className="px-btn" onClick={submit}>Submit payment of {money(amount, true)}</button></div>
-    </>}
   </main></PortalLayout>;
 }
 

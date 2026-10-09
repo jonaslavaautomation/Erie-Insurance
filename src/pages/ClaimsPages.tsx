@@ -8,7 +8,7 @@ import { fullName, today, usePortal } from '@/data/store';
 import { money } from '@/lib/rating';
 import type { ClaimStatus, Policy, PolicyType } from '@/data/types';
 
-const lifecycle: ClaimStatus[] = ['Reported', 'Assigned', 'Inspection', 'Estimate Review', 'Repair In Progress', 'Payment Issued', 'Closed'];
+const lifecycle: ClaimStatus[] = ['Claim Submitted', 'Adjuster Assigned', 'Inspection', 'Estimate Approved', 'Payment Issued', 'Closed'];
 const autoLossTypes = ['Auto — Collision', 'Auto — Comprehensive (Glass)', 'Auto — Comprehensive (Theft)', 'Auto — Comprehensive (Animal)', 'Auto — Comprehensive (Weather)', 'Auto — Liability (other party)'];
 const homeLossTypes = ['Home — Wind/Hail', 'Home — Water Damage', 'Home — Fire/Smoke', 'Home — Theft/Burglary', 'Home — Liability (injury on premises)', 'Home — Lightning/Power Surge'];
 const lossTypesByPolicy: Record<PolicyType, string[]> = {
@@ -70,7 +70,7 @@ export function ClaimReportPage() {
   const preselected = requested && claimable(requested) ? requested : undefined;
   const [policyNumber, setPolicyNumber] = useState(preselected?.number ?? '');
   const [lookup, setLookup] = useState('');
-  const [form, setForm] = useState({ lossDate: today(), lossTime: '12:00', lossType: '', location: '', description: '', injuries: false, policeReport: '', otherParty: '', vehicleId: preselected?.vehicles[0]?.id ?? '', drivable: true, repairShop: DRP_SHOPS[0], rental: true, mitigation: false, contactPhone: customers.find((c) => c.id === preselected?.customerId)?.phone ?? '' });
+  const [form, setForm] = useState({ lossDate: today(), lossTime: '12:00', lossType: '', location: '', description: '', injuries: false, policeReport: '', tpName: '', tpPhone: '', tpInsurer: '', tpPolicy: '', tpVehicle: '', tpPlate: '', vehicleId: preselected?.vehicles[0]?.id ?? '', drivable: true, repairShop: DRP_SHOPS[0], rental: true, mitigation: false, contactPhone: customers.find((c) => c.id === preselected?.customerId)?.phone ?? '' });
   const [attachments, setAttachments] = useState<string[]>([]);
   const [errors, setErrors] = useState<string[]>([]);
   const customerFilter = params.get('customer');
@@ -106,7 +106,7 @@ export function ClaimReportPage() {
   const submit = () => {
     if (!policy) return;
     const vehicle = policy.vehicles.find((v) => v.id === form.vehicleId);
-    const number = addClaim({ policyNumber: policy.number, customerId: policy.customerId, lossDate: form.lossDate, lossType: form.lossType, location: form.location, description: `${form.description}${vehicle ? ` Vehicle: ${vehicle.year} ${vehicle.make} ${vehicle.model}${form.drivable ? '' : ' (not drivable)'}.` : ''}${form.otherParty ? ` Other party: ${form.otherParty}.` : ''}`, injuries: form.injuries, policeReport: form.policeReport, repairShop: isAuto ? form.repairShop : form.mitigation ? 'Mitigation vendor requested' : '', rental: isAuto && form.rental ? 'Rental requested — transportation expenses' : '', deductible: deductibleFor(policy, form.lossType), attachments });
+    const number = addClaim({ policyNumber: policy.number, customerId: policy.customerId, lossDate: form.lossDate, lossType: form.lossType, location: form.location, description: `${form.description}${vehicle ? ` Vehicle: ${vehicle.year} ${vehicle.make} ${vehicle.model}${form.drivable ? '' : ' (not drivable)'}.` : ''}`, injuries: form.injuries, policeReport: form.policeReport, repairShop: isAuto ? form.repairShop : form.mitigation ? 'Mitigation vendor requested' : '', rental: isAuto && form.rental ? 'Rental requested — transportation expenses' : '', deductible: deductibleFor(policy, form.lossType), attachments, lossTime: form.lossTime, thirdParty: form.tpName.trim() ? { name: form.tpName.trim(), phone: form.tpPhone, insurer: form.tpInsurer, policyNumber: form.tpPolicy, vehicle: form.tpVehicle, plate: form.tpPlate } : undefined });
     notify(`Claim ${number} reported. An adjuster will contact the customer within 24 hours.`);
     navigate(`/claims/${number}?new=1`);
   };
@@ -125,7 +125,13 @@ export function ClaimReportPage() {
         <Field label="Location of loss" required className="span3"><input value={form.location} onChange={(e) => set('location', e.target.value)} placeholder={isAuto ? 'Street / intersection, city' : customer?.address} /></Field>
         <Field label="What happened?" required className="span3"><textarea rows={4} value={form.description} onChange={(e) => set('description', e.target.value)} /></Field>
         <Field label="Police / fire report #"><input value={form.policeReport} onChange={(e) => set('policeReport', e.target.value)} /></Field>
-        <Field label="Other party (name, carrier)" className="span2"><input value={form.otherParty} onChange={(e) => set('otherParty', e.target.value)} /></Field>
+        <h3 className="mini-h span3">Third party (if any)</h3>
+        <Field label="Name"><input value={form.tpName} onChange={(e) => set('tpName', e.target.value)} /></Field>
+        <Field label="Phone"><input value={form.tpPhone} onChange={(e) => set('tpPhone', e.target.value)} /></Field>
+        <Field label="Their insurer"><input value={form.tpInsurer} onChange={(e) => set('tpInsurer', e.target.value)} /></Field>
+        <Field label="Their policy #"><input value={form.tpPolicy} onChange={(e) => set('tpPolicy', e.target.value)} /></Field>
+        <Field label="Their vehicle"><input value={form.tpVehicle} onChange={(e) => set('tpVehicle', e.target.value)} placeholder="Year make model" /></Field>
+        <Field label="Plate"><input value={form.tpPlate} onChange={(e) => set('tpPlate', e.target.value)} /></Field>
         <label className="px-checks span3"><input type="checkbox" checked={form.injuries} onChange={(e) => set('injuries', e.target.checked)} /> Anyone injured?</label>
       </div>}
       {step === 2 && (isAuto ? <div className="px-grid2">
@@ -160,8 +166,7 @@ export function ClaimDetailPage() {
     const patch: Partial<typeof claim> = { status: nextStatus };
     let text = `Status updated to ${nextStatus}.`;
     if (nextStatus === 'Inspection') text = 'Inspection scheduled with the customer.';
-    if (nextStatus === 'Estimate Review') { patch.reserve = claim.reserve || 4800; text = `Estimate received. Reserve set at ${money(patch.reserve)}.`; }
-    if (nextStatus === 'Repair In Progress') text = `Repairs authorized at ${claim.repairShop || 'selected vendor'}.`;
+    if (nextStatus === 'Estimate Approved') { patch.reserve = claim.reserve || 4800; text = `Estimate approved at ${money(patch.reserve)}. Repairs authorized at ${claim.repairShop || 'selected vendor'}.`; }
     if (nextStatus === 'Payment Issued') { const amount = Math.max(0, (claim.reserve || 4800) - claim.deductible - claim.paid); patch.paid = claim.paid + amount; patch.payments = [...claim.payments, { date: today(), payee: claim.repairShop || (customer ? fullName(customer) : 'Insured'), amount, type: 'Settlement (less deductible)' }]; text = `Payment of ${money(amount)} issued via ERIEpay.`; }
     if (nextStatus === 'Closed') text = 'Claim closed. Subrogation reviewed.';
     updateClaim(claim.number, { ...patch, notes: [...claim.notes, { date: today(), author: claim.adjuster.name, text }] });
@@ -176,7 +181,7 @@ export function ClaimDetailPage() {
     <Panel><ol className="claim-track">{lifecycle.map((s, i) => <li key={s} className={i < stage ? 'done' : i === stage ? 'current' : ''}><span>{i < stage ? <Check size={12} /> : i + 1}</span>{s}</li>)}</ol></Panel>
     <div className="px-cols">
       <div className="px-main-col">
-        <Panel title="Loss details"><dl className="px-dl two"><dt>Insured</dt><dd>{customer ? <Link to={`/customers/${customer.id}`}>{fullName(customer)}</Link> : '—'}</dd><dt>Policy</dt><dd><Link className="mono" to={`/policies/${claim.policyNumber}`}>{claim.policyNumber}</Link></dd><dt>Location</dt><dd>{claim.location}</dd><dt>Description</dt><dd>{claim.description}</dd><dt>Injuries</dt><dd>{claim.injuries ? 'Yes' : 'No'}</dd><dt>Police report</dt><dd>{claim.policeReport || '—'}</dd><dt>Repair / vendor</dt><dd>{claim.repairShop || '—'}</dd><dt>Rental</dt><dd>{claim.rental || '—'}</dd></dl></Panel>
+        <Panel title="Loss details"><dl className="px-dl two"><dt>Insured</dt><dd>{customer ? <Link to={`/customers/${customer.id}`}>{fullName(customer)}</Link> : '—'}</dd><dt>Policy</dt><dd><Link className="mono" to={`/policies/${claim.policyNumber}`}>{claim.policyNumber}</Link></dd><dt>Location</dt><dd>{claim.location}{claim.lossTime ? ` · ${claim.lossTime}` : ''}</dd>{claim.thirdParty && <><dt>Third party</dt><dd>{claim.thirdParty.name}{claim.thirdParty.phone ? ` · ${claim.thirdParty.phone}` : ''}{claim.thirdParty.insurer ? ` · insured by ${claim.thirdParty.insurer}` : ''}{claim.thirdParty.policyNumber ? ` (${claim.thirdParty.policyNumber})` : ''}{claim.thirdParty.vehicle ? ` · ${claim.thirdParty.vehicle}` : ''}{claim.thirdParty.plate ? ` · plate ${claim.thirdParty.plate}` : ''}</dd></>}<dt>Description</dt><dd>{claim.description}</dd><dt>Injuries</dt><dd>{claim.injuries ? 'Yes' : 'No'}</dd><dt>Police report</dt><dd>{claim.policeReport || '—'}</dd><dt>Repair / vendor</dt><dd>{claim.repairShop || '—'}</dd><dt>Rental</dt><dd>{claim.rental || '—'}</dd></dl></Panel>
         <Panel title="Claim notes"><ul className="px-timeline">{claim.notes.map((n, i) => <li key={i}><strong>{n.date}</strong> {n.text} <small>— {n.author}</small></li>)}</ul><div className="note-box"><textarea rows={2} value={note} onChange={(e) => setNote(e.target.value)} placeholder="Add a note for the adjuster (visible in the claim file)" aria-label="New note" /><button type="button" className="px-btn" onClick={addNote}>Add note</button></div></Panel>
         <Panel title="Payments">{claim.payments.length === 0 ? <Empty>No payments issued yet.</Empty> : <table className="px-table"><thead><tr><th>Date</th><th>Payee</th><th>Type</th><th>Amount</th></tr></thead><tbody>{claim.payments.map((p, i) => <tr key={i}><td>{p.date}</td><td>{p.payee}</td><td>{p.type}</td><td>{money(p.amount)}</td></tr>)}</tbody></table>}</Panel>
       </div>

@@ -1,9 +1,9 @@
 /* Shared AgentExchange portal styles for pages beyond the dashboard grid. */
 :root {
-  --erie-blue: #0878bc;
-  --erie-blue-dark: #005d9d;
+  --erie-blue: #0275D8;
+  --erie-blue-dark: #0069D9;
   --erie-navy: #003b70;
-  --erie-teal: #168e91;
+  --erie-teal: #117F81;
   --ink: #26384a;
   --ink-2: #53697b;
   --ink-3: #8394a3;
@@ -553,3 +553,14 @@ button.record-alert:hover { background: #00508f; }
 .premium-row.tax { color: var(--ink-3); }
 .bundle-savings { margin-top: 6px; padding: 6px 8px; background: var(--good-bg); color: var(--good); font-size: 12px; font-weight: 700; }
 @media (max-width: 900px) { .plan-grid.five { grid-template-columns: repeat(2, minmax(0, 1fr)); } .line-picker { grid-template-columns: 1fr; } }
+
+/* Endorsements, payment methods */
+.change-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 8px; }
+.change-option { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; padding: 12px; border: 1px solid var(--line); background: #fff; color: var(--erie-navy); text-align: left; cursor: pointer; }
+.change-option strong { font-size: 13px; }
+.change-option small { color: var(--ink-2); font-size: 11.5px; line-height: 1.35; }
+.change-option:hover { border-color: var(--erie-blue); background: #f5faff; }
+.change-option.on { border-color: var(--erie-blue); box-shadow: inset 0 0 0 1px var(--erie-blue); background: #f2f8ff; }
+.method-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 8px; margin-bottom: 12px; }
+.method-list .plan strong { display: flex; align-items: center; gap: 6px; font-size: 13px; }
+.credit-text { color: var(--good); font-weight: 700; }

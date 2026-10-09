@@ -17,7 +17,8 @@ const statusTone: Record<string, string> = {
   'Pending Cancel': 'warn', 'Pending Issue': 'warn', Referred: 'warn', Viewed: 'info', Sent: 'info', New: 'info', Contacted: 'info', Quoted: 'info',
   Cancelled: 'bad', Declined: 'bad', Quote: 'info', Application: 'info',
   'Past due': 'bad', Complete: 'good', Approved: 'good', Enrolled: 'info',
-  Reported: 'info', Assigned: 'info', Inspection: 'warn', 'Estimate Review': 'warn', 'Repair In Progress': 'warn', 'Payment Issued': 'good',
+  'Claim Submitted': 'info', 'Adjuster Assigned': 'info', Inspection: 'warn', 'Estimate Approved': 'warn', 'Payment Issued': 'good',
+  Paid: 'good', 'Partially paid': 'warn', Due: 'info', Overdue: 'bad', Upcoming: 'muted', Excluded: 'bad', Scheduled: 'info', Default: 'good',
 };
 export function StatusBadge({ status }: { status: string }) {
   return <span className={`px-badge ${statusTone[status] ?? 'info'}`}>{status}</span>;

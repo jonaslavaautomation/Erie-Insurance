@@ -1,26 +1,22 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Link, useParams, useSearchParams } from 'react-router-dom';
-import { Ban, CreditCard, FileText, Pencil, Printer, RotateCcw, Shield } from 'lucide-react';
+import { AlertTriangle, Ban, CreditCard, Download, FileText, Landmark, Pencil, Printer, RotateCcw, Shield } from 'lucide-react';
 import PortalLayout from '@/components/PortalLayout';
 import { Empty, Field, Modal, PageTitle, Panel, StatusBadge, Tabs } from '@/components/ui';
-import { DriverModal, VehicleModal } from '@/pages/QuoteWizard';
 import { policyIcon, policyLabel } from '@/pages/CustomerPages';
-import { addDays, fullName, today, usePortal } from '@/data/store';
+import { addDays, fullName, isNonPaymentCancel, today, usePortal } from '@/data/store';
 import { AGENT } from '@/data/seed';
-import { BI_OPTIONS, money, rateAuto, rateHome } from '@/lib/rating';
+import { money, payPlanLabel } from '@/lib/rating';
+import { clampToTerm } from '@/lib/endorsements';
+import { installmentSchedule } from '@/lib/billing';
+import { billingStatementHtml, decPageHtml, downloadDocument, evidenceOfInsuranceHtml, idCardsHtml, openDocument } from '@/lib/documents';
 
 // Split limits read as $250K / $500K; combined single limits as $500K CSL.
 const limitText = (l: string) => (l.includes('CSL') ? `$${l.replace(' CSL', '')}K CSL` : `$${l.replace('/', 'K / $')}K`);
-import type { AutoCoverages, Driver, HomeCoverages, Policy, PolicyDocument, Vehicle } from '@/data/types';
+import type { Policy, PolicyDocument } from '@/data/types';
 
 const allTabs = ['Overview', 'Coverages', 'Drivers & Vehicles', 'Property', 'Billing', 'Claims', 'Documents', 'History'] as const;
 type PolicyTab = (typeof allTabs)[number];
-
-function reRate(policy: Policy, state: string, multiPolicy: boolean) {
-  if (policy.type === 'Auto' && policy.autoCoverages) return rateAuto(state, policy.drivers, policy.vehicles, policy.autoCoverages, { multiPolicy, payPlan: policy.payPlan, autoPay: policy.autoPay }).total;
-  if (policy.type === 'Home' && policy.property && policy.homeCoverages) return rateHome(state, policy.property, policy.homeCoverages, { multiPolicy, earlyQuote: false, payPlan: policy.payPlan }).total;
-  return policy.premium;
-}
 
 export default function PolicyPage() {
   const { number = '' } = useParams();
@@ -28,7 +24,7 @@ export default function PolicyPage() {
   const { policies, customers, billing, claims, cancelPolicy, reinstatePolicy, notify } = usePortal();
   const policy = policies.find((p) => p.number === number);
   const [tab, setTab] = useState<PolicyTab>('Overview');
-  const [modal, setModal] = useState<'change' | 'cancel' | 'id' | null>(null);
+  const [modal, setModal] = useState<'cancel' | 'id' | null>(null);
   const [doc, setDoc] = useState<PolicyDocument | null>(null);
 
   useEffect(() => { if (params.get('doc') === 'id') { setModal('id'); setParams({}, { replace: true }); } }, [params, setParams]);
@@ -40,54 +36,80 @@ export default function PolicyPage() {
   const policyClaims = claims.filter((c) => c.policyNumber === policy.number);
   const tabs = allTabs.filter((t) => (t === 'Drivers & Vehicles' ? policy.type === 'Auto' : t === 'Property' ? policy.type === 'Home' : true));
   const Icon = policyIcon[policy.type];
-  const canChange = policy.status !== 'Cancelled' && (policy.type === 'Auto' || policy.type === 'Home');
+  const canChange = policy.status !== 'Cancelled' && policy.type !== 'Life';
   const canClaim = policy.status !== 'Cancelled' && policy.type !== 'Life';
+  const nonPayment = (policy.status === 'Cancelled' || policy.status === 'Pending Cancel') && isNonPaymentCancel(policy);
+  const endorseLink = `/policies/${policy.number}/endorse`;
+  const lenders = policy.mortgagees ?? [];
+  const schedule = account ? installmentSchedule(policy, account) : [];
+  const openDec = () => openDocument(decPageHtml(policy, customer), `declarations-${policy.number}`);
+  const openIds = () => openDocument(idCardsHtml(policy, customer), `id-cards-${policy.number}`);
+  const openStatement = () => account && openDocument(billingStatementHtml(policy, customer, account, schedule), `statement-${policy.number}`);
+  const viewDocument = (d: PolicyDocument) => {
+    if (d.kind === 'ID Card') return openIds();
+    if (d.kind === 'Bill' && account) return openStatement();
+    if (/Evidence/i.test(d.name) && lenders[0]) return openDocument(evidenceOfInsuranceHtml(policy, customer, lenders[lenders.length - 1]), `evidence-${policy.number}`);
+    if (d.kind === 'Declarations' || d.kind === 'Endorsement' || d.kind === 'Application') return openDec();
+    setDoc(d);
+  };
 
   return <PortalLayout><main className="px-page">
     <PageTitle crumbs={[{ label: 'Customers', to: '/customers' }, ...(customer ? [{ label: fullName(customer), to: `/customers/${customer.id}` }] : []), { label: policy.number }]} title={`${policyLabel(policy)} — ${policy.number}`} subtitle={<><StatusBadge status={policy.status} /> {policy.description} · Term {policy.effective} – {policy.expiration}</>} actions={<>
-      {canChange && <button type="button" className="px-btn ghost" onClick={() => setModal('change')}><Pencil size={14} /> Policy change</button>}
-      {policy.type === 'Auto' && <button type="button" className="px-btn ghost" onClick={() => setModal('id')}><Printer size={14} /> ID cards</button>}
+      {canChange && <Link className="px-btn ghost" to={endorseLink}><Pencil size={14} /> Policy change</Link>}
+      {policy.type === 'Auto' && <button type="button" className="px-btn ghost" onClick={openIds}><Printer size={14} /> ID cards</button>}
+      <button type="button" className="px-btn ghost" onClick={openDec}><FileText size={14} /> Dec page</button>
       {canClaim && <Link className="px-btn ghost" to={`/claims/new?policy=${policy.number}`}><Shield size={14} /> Report claim</Link>}
-      <Link className="px-btn" to={`/billing/pay?policy=${policy.number}`}><CreditCard size={14} /> Make payment</Link>
+      {nonPayment ? <Link className="px-btn" to={`/billing/reinstate/${policy.number}`}><RotateCcw size={14} /> Reinstate</Link> : <Link className="px-btn" to={`/billing/pay?policy=${policy.number}`}><CreditCard size={14} /> Make payment</Link>}
     </>} />
+    {nonPayment && <div className="wizard-banner bad"><AlertTriangle size={16} /> {policy.status === 'Cancelled' ? 'Cancelled for non-payment.' : 'Pending cancellation for non-payment.'} <Link to={`/billing/reinstate/${policy.number}`}>Start reinstatement</Link></div>}
     <Tabs tabs={tabs} active={tab} onChange={setTab} />
 
     {tab === 'Overview' && <div className="px-cols">
       <div className="px-main-col">
-        <Panel title={<><Icon size={16} /> Policy summary</>}><dl className="px-dl two"><dt>Named insured</dt><dd>{customer ? <Link to={`/customers/${customer.id}`}>{fullName(customer)}</Link> : '—'}</dd><dt>Mailing address</dt><dd>{customer ? `${customer.address}, ${customer.city}, ${customer.state} ${customer.zip}` : '—'}</dd><dt>Annual premium</dt><dd>{money(policy.premium)}</dd><dt>Payment plan</dt><dd>{policy.payPlan}{policy.autoPay ? ' · AutoPay (fees waived)' : ''}</dd><dt>Producer</dt><dd>{AGENT.name} · {policy.agentNumber}</dd><dt>Underwriting company</dt><dd>{policy.type === 'Life' ? 'Erie Family Life Insurance Company' : 'Erie Insurance Exchange'}</dd>{policy.type === 'Auto' && <><dt>Rate Lock</dt><dd>{policy.autoCoverages?.rateLock ? 'ERIE Rate Lock® active' : 'Not elected'}</dd></>}</dl></Panel>
+        <Panel title={<><Icon size={16} /> Policy summary</>}><dl className="px-dl two"><dt>Named insured</dt><dd>{customer ? <Link to={`/customers/${customer.id}`}>{fullName(customer)}</Link> : '—'}</dd><dt>Mailing address</dt><dd>{customer ? `${customer.address}, ${customer.city}, ${customer.state} ${customer.zip}` : '—'}</dd><dt>Annual premium</dt><dd>{money(policy.premium)}</dd><dt>Payment plan</dt><dd>{payPlanLabel[policy.payPlan]}{policy.autoPay ? ' · EriePay AutoPay (fees waived)' : ''}</dd><dt>Producer</dt><dd>{AGENT.name} · {policy.agentNumber}</dd><dt>Underwriting company</dt><dd>{policy.type === 'Life' ? 'Erie Family Life Insurance Company' : 'Erie Insurance Exchange · NAIC 26271'}</dd>{policy.type === 'Auto' && <><dt>Rate Lock</dt><dd>{policy.autoCoverages?.rateLock ? 'ERIE Rate Lock® active' : 'Not elected'}</dd></>}</dl></Panel>
+        {(lenders.length > 0 || canChange) && policy.type !== 'Life' && <Panel title={<><Landmark size={16} /> Mortgagees & loss payees</>} actions={canChange && <Link to={endorseLink}>Change</Link>}>{lenders.length === 0 ? <p className="px-muted">None on file.</p> : <table className="px-table"><tbody>{lenders.map((m) => <tr key={m.id}><td>{m.role}</td><td>{m.name}{m.clause !== 'None' ? `, ${m.clause}` : ''}<small className="cell-note">Loan {m.loanNumber} · {m.address}, {m.city}, {m.state} {m.zip}</small></td><td><button type="button" className="link-button" onClick={() => openDocument(evidenceOfInsuranceHtml(policy, customer, m), `evidence-${policy.number}`)}>Evidence of insurance</button></td></tr>)}</tbody></table>}</Panel>}
+        {(policy.endorsements ?? []).length > 0 && <Panel title="Policy changes this term"><table className="px-table"><thead><tr><th>Effective</th><th>Change</th><th>Premium</th></tr></thead><tbody>{policy.endorsements!.map((e) => <tr key={e.id}><td>{e.effective}</td><td>{e.description}<small className="cell-note">{e.id} · processed {e.processed} by {e.by}</small></td><td className="num">{e.proRata >= 0 ? '+' : '−'}{money(Math.abs(e.proRata), true)}</td></tr>)}</tbody></table></Panel>}
         <Panel title="Recent activity" actions={<button type="button" className="link-button" onClick={() => setTab('History')}>Full history</button>}><ul className="px-timeline">{policy.history.slice(0, 4).map((h, i) => <li key={i}><strong>{h.date}</strong> {h.text} <small>— {h.by}</small></li>)}</ul></Panel>
       </div>
       <div className="px-side-col">
-        <Panel title="Billing" actions={<button type="button" className="link-button" onClick={() => setTab('Billing')}>Details</button>}>{account ? <><div className="stat-pair"><div><span>Minimum due</span><strong>{money(account.minimumDue, true)}</strong></div><div><span>Due date</span><strong>{account.nextDueDate}</strong></div></div><Link className="px-btn wide" to={`/billing/pay?policy=${policy.number}`}>Pay now</Link></> : <Empty>No billing account.</Empty>}</Panel>
+        <Panel title="Billing" actions={<button type="button" className="link-button" onClick={() => setTab('Billing')}>Details</button>}>{account ? <><div className="stat-pair"><div><span>Minimum due</span><strong>{money(account.minimumDue, true)}</strong></div><div><span>Due date</span><strong>{account.nextDueDate}</strong></div></div><Link className="px-btn wide" to={nonPayment ? `/billing/reinstate/${policy.number}` : `/billing/pay?policy=${policy.number}`}>{nonPayment ? 'Reinstate' : 'Pay now'}</Link></> : <Empty>No billing account.</Empty>}</Panel>
         <Panel title="Policy actions"><div className="px-action-list">
-          {canChange && <button type="button" onClick={() => setModal('change')}><Pencil size={14} /> Request policy change</button>}
-          {policy.type === 'Auto' && <button type="button" onClick={() => setModal('id')}><Printer size={14} /> Print ID cards</button>}
+          {canChange && <Link to={endorseLink}><Pencil size={14} /> Request policy change</Link>}
+          {policy.type === 'Auto' && <button type="button" onClick={openIds}><Printer size={14} /> Print ID cards</button>}
+          <button type="button" onClick={openDec}><FileText size={14} /> Declarations page</button>
           <Link to={`/billing/autopay?policy=${policy.number}`}><CreditCard size={14} /> {policy.autoPay ? 'Manage AutoPay' : 'Enroll in AutoPay'}</Link>
+          <Link to={`/billing/methods?customer=${policy.customerId}`}><CreditCard size={14} /> Payment methods</Link>
           <Link to={`/resources/certificates?policy=${policy.number}`}><FileText size={14} /> Certificate of insurance</Link>
           {policy.status === 'Active' && <button type="button" className="danger" onClick={() => setModal('cancel')}><Ban size={14} /> Cancel policy</button>}
-          {(policy.status === 'Pending Cancel' || policy.status === 'Cancelled') && <button type="button" onClick={() => { reinstatePolicy(policy.number); notify(`Policy ${policy.number} reinstated.`); }}><RotateCcw size={14} /> Reinstate policy</button>}
+          {nonPayment && <Link to={`/billing/reinstate/${policy.number}`}><RotateCcw size={14} /> Reinstate (non-payment)</Link>}
+          {!nonPayment && (policy.status === 'Pending Cancel' || policy.status === 'Cancelled') && <button type="button" onClick={() => { reinstatePolicy(policy.number); notify(`Policy ${policy.number} reinstated.`); }}><RotateCcw size={14} /> Rescind cancellation</button>}
         </div></Panel>
       </div>
     </div>}
 
-    {tab === 'Coverages' && <Panel title="Coverages & limits" actions={canChange && <button type="button" className="link-button" onClick={() => setModal('change')}>Change coverages</button>}><CoverageTable policy={policy} /></Panel>}
+    {tab === 'Coverages' && <Panel title="Coverages & limits" actions={canChange && <Link to={endorseLink}>Change coverages</Link>}><CoverageTable policy={policy} /></Panel>}
 
-    {tab === 'Drivers & Vehicles' && <><Panel title="Drivers" actions={canChange && <button type="button" className="link-button" onClick={() => setModal('change')}>Add / change driver</button>}><table className="px-table"><thead><tr><th>Driver</th><th>Relationship</th><th>DOB</th><th>License</th><th>Violations</th><th>Accidents</th></tr></thead><tbody>{policy.drivers.map((d) => <tr key={d.id}><td>{d.firstName} {d.lastName}</td><td>{d.relationship}</td><td>{d.dob}</td><td>{d.licenseState} {d.licenseNumber}</td><td>{d.violations}</td><td>{d.accidents}</td></tr>)}</tbody></table></Panel>
-      <Panel title="Vehicles" actions={canChange && <button type="button" className="link-button" onClick={() => setModal('change')}>Add / replace vehicle</button>}><table className="px-table"><thead><tr><th>Vehicle</th><th>VIN</th><th>Use</th><th>Garaging ZIP</th><th>Lienholder</th></tr></thead><tbody>{policy.vehicles.map((v) => <tr key={v.id}><td>{v.year} {v.make} {v.model}</td><td className="mono">{v.vin}</td><td>{v.use}</td><td>{v.garagingZip}</td><td>{v.lienholder || '—'}</td></tr>)}</tbody></table></Panel></>}
+    {tab === 'Drivers & Vehicles' && <><Panel title="Drivers" actions={canChange && <Link to={endorseLink}>Add / change / exclude driver</Link>}><table className="px-table"><thead><tr><th>Driver</th><th>Relationship</th><th>DOB</th><th>License</th><th>Violations</th><th>Accidents</th><th>Status</th></tr></thead><tbody>{policy.drivers.map((d) => <tr key={d.id}><td>{d.firstName} {d.lastName}</td><td>{d.relationship}</td><td>{d.dob}</td><td>{d.licenseState} {d.licenseNumber}</td><td>{d.violations}</td><td>{d.accidents}</td><td>{d.excluded ? <StatusBadge status="Excluded" /> : 'Rated'}</td></tr>)}</tbody></table></Panel>
+      <Panel title="Vehicles" actions={canChange && <Link to={endorseLink}>Add / replace vehicle</Link>}><table className="px-table"><thead><tr><th>Vehicle</th><th>VIN</th><th>Use</th><th>Garaging ZIP</th><th>Lienholder</th></tr></thead><tbody>{policy.vehicles.map((v) => <tr key={v.id}><td>{v.year} {v.make} {v.model}</td><td className="mono">{v.vin}</td><td>{v.use}</td><td>{v.garagingZip}</td><td>{v.lienholder || '—'}</td></tr>)}</tbody></table></Panel></>}
 
     {tab === 'Property' && policy.property && <Panel title="Dwelling"><dl className="px-dl two"><dt>Dwelling type</dt><dd>{policy.property.dwellingType}</dd><dt>Year built</dt><dd>{policy.property.yearBuilt}</dd><dt>Square feet</dt><dd>{policy.property.squareFeet.toLocaleString()}</dd><dt>Construction</dt><dd>{policy.property.construction}</dd><dt>Roof</dt><dd>{policy.property.roofType}, installed {policy.property.roofYear}</dd><dt>Heating</dt><dd>{policy.property.heating}</dd><dt>Protection class</dt><dd>{policy.property.protectionClass}</dd><dt>Protective devices</dt><dd>{[policy.property.smokeAlarms && 'Smoke alarms', policy.property.burglarAlarm && 'Burglar alarm', policy.property.sprinklers && 'Sprinklers'].filter(Boolean).join(', ') || 'None'}</dd></dl></Panel>}
 
-    {tab === 'Billing' && <Panel title="Billing account" actions={<Link to={`/billing/pay?policy=${policy.number}`}>Make a payment</Link>}>{account ? <><div className="stat-row"><div><span>Remaining term balance</span><strong>{money(account.balance, true)}</strong></div><div><span>Minimum due</span><strong>{money(account.minimumDue, true)}</strong></div><div><span>Next due</span><strong>{account.nextDueDate}</strong></div><div><span>AutoPay</span><strong>{policy.autoPay ? 'Enrolled' : <Link to={`/billing/autopay?policy=${policy.number}`}>Enroll</Link>}</strong></div></div><h3 className="section-h">Payment history</h3>{account.payments.length === 0 ? <Empty>No payments received this term.</Empty> : <table className="px-table"><thead><tr><th>Date</th><th>Amount</th><th>Method</th><th>Confirmation</th></tr></thead><tbody>{account.payments.map((p) => <tr key={p.id}><td>{p.date}</td><td>{money(p.amount, true)}</td><td>{p.method}</td><td className="mono">{p.confirmation}</td></tr>)}</tbody></table>}</> : <Empty>No billing account.</Empty>}</Panel>}
+    {tab === 'Billing' && <Panel title="Billing account" actions={account && <><button type="button" className="link-button" onClick={openStatement}><FileText size={13} /> Statement</button><button type="button" className="link-button" onClick={() => downloadDocument(billingStatementHtml(policy, customer, account, schedule), `statement-${policy.number}`)}><Download size={13} /> Download</button><Link to={nonPayment ? `/billing/reinstate/${policy.number}` : `/billing/pay?policy=${policy.number}`}>{nonPayment ? 'Reinstate' : 'Make a payment'}</Link></>}>{account ? <>
+      <div className="stat-row"><div><span>Remaining term balance</span><strong>{money(account.balance, true)}</strong></div><div><span>Minimum due</span><strong>{money(account.minimumDue, true)}</strong></div><div><span>Next due</span><strong>{account.nextDueDate}</strong></div><div><span>AutoPay</span><strong>{policy.autoPay ? 'Enrolled' : <Link to={`/billing/autopay?policy=${policy.number}`}>Enroll</Link>}</strong></div></div>
+      <h3 className="section-h">Installment schedule — {payPlanLabel[policy.payPlan]}</h3>
+      <table className="px-table"><thead><tr><th>#</th><th>Due</th><th className="num">Amount</th><th className="num">Paid</th><th>Status</th></tr></thead><tbody>{schedule.map((i) => <tr key={i.n}><td>{i.n}</td><td>{i.due}</td><td className="num">{money(i.amount, true)}</td><td className="num">{money(i.paid, true)}</td><td><StatusBadge status={i.status} /></td></tr>)}</tbody></table>
+      {(account.scheduled ?? []).length > 0 && <><h3 className="section-h">Scheduled payments</h3><table className="px-table"><tbody>{account.scheduled!.map((p) => <tr key={p.id}><td>{p.date}</td><td>{p.method}</td><td className="mono">{p.confirmation}</td><td className="num">{money(p.amount, true)}</td><td><StatusBadge status="Scheduled" /></td></tr>)}</tbody></table></>}
+      <h3 className="section-h">Payment history</h3>{account.payments.length === 0 ? <Empty>No payments received this term.</Empty> : <table className="px-table"><thead><tr><th>Date</th><th>Type</th><th>Amount</th><th>Method</th><th>Confirmation</th></tr></thead><tbody>{account.payments.map((p) => <tr key={p.id}><td>{p.date}</td><td>{p.kind ?? 'Installment'}</td><td>{money(p.amount, true)}</td><td>{p.method}</td><td className="mono">{p.confirmation}</td></tr>)}</tbody></table>}
+    </> : <Empty>No billing account.</Empty>}</Panel>}
 
     {tab === 'Claims' && <Panel title="Claims" actions={canClaim && <Link to={`/claims/new?policy=${policy.number}`}>Report a claim</Link>}>{policyClaims.length === 0 ? <Empty>No claims on this policy.</Empty> : <table className="px-table"><thead><tr><th>Claim #</th><th>Loss date</th><th>Type</th><th>Adjuster</th><th>Status</th></tr></thead><tbody>{policyClaims.map((c) => <tr key={c.number}><td><Link className="mono" to={`/claims/${c.number}`}>{c.number}</Link></td><td>{c.lossDate}</td><td>{c.lossType}</td><td>{c.adjuster.name}</td><td><StatusBadge status={c.status} /></td></tr>)}</tbody></table>}</Panel>}
 
-    {tab === 'Documents' && <Panel title="Documents">{policy.documents.length === 0 ? <Empty>No documents.</Empty> : <table className="px-table"><thead><tr><th>Document</th><th>Type</th><th>Date</th><th /></tr></thead><tbody>{policy.documents.map((d, i) => <tr key={`${d.name}-${i}`} className="clickable" onClick={() => (d.kind === 'ID Card' ? setModal('id') : setDoc(d))}><td><FileText size={14} /> {d.name}</td><td>{d.kind}</td><td>{d.date}</td><td><button type="button" className="link-button">View</button></td></tr>)}</tbody></table>}</Panel>}
+    {tab === 'Documents' && <Panel title="Documents" actions={<button type="button" className="link-button" onClick={openDec}><FileText size={13} /> Current declarations</button>}>{policy.documents.length === 0 ? <Empty>No documents.</Empty> : <table className="px-table"><thead><tr><th>Document</th><th>Type</th><th>Date</th><th /></tr></thead><tbody>{policy.documents.map((d, i) => <tr key={`${d.name}-${i}`} className="clickable" onClick={() => viewDocument(d)}><td><FileText size={14} /> {d.name}</td><td>{d.kind}</td><td>{d.date}</td><td><button type="button" className="link-button">View</button></td></tr>)}</tbody></table>}</Panel>}
 
     {tab === 'History' && <Panel title="Transaction history"><ul className="px-timeline">{policy.history.map((h, i) => <li key={i}><strong>{h.date}</strong> {h.text} <small>— {h.by}</small></li>)}</ul></Panel>}
 
-    {modal === 'change' && <PolicyChangeModal policy={policy} state={customer?.state ?? 'WI'} onClose={() => setModal(null)} />}
     {modal === 'cancel' && <CancelModal policy={policy} onClose={() => setModal(null)} onConfirm={(reason, date) => { cancelPolicy(policy.number, reason, date); notify(`Cancellation submitted for ${policy.number} effective ${date}.`, 'info'); setModal(null); }} />}
-    {modal === 'id' && <IdCardModal policy={policy} insured={customer ? fullName(customer) : ''} onClose={() => setModal(null)} />}
+    {modal === 'id' && <IdCardModal policy={policy} insured={customer ? fullName(customer) : ''} onPrint={openIds} onClose={() => setModal(null)} />}
     {doc && <DocumentModal policy={policy} doc={doc} insured={customer ? `${fullName(customer)}, ${customer.address}, ${customer.city}, ${customer.state} ${customer.zip}` : ''} onClose={() => setDoc(null)} />}
   </main></PortalLayout>;
 }
@@ -149,68 +171,7 @@ function CoverageTable({ policy }: { policy: Policy }) {
   return <p className="px-muted">{policy.description}. Full coverage detail is available on the declarations page in Documents.</p>;
 }
 
-type ChangeKind = 'add-vehicle' | 'replace-vehicle' | 'remove-vehicle' | 'add-driver' | 'remove-driver' | 'auto-coverage' | 'home-coverage';
-
-function PolicyChangeModal({ policy, state, onClose }: { policy: Policy; state: string; onClose: () => void }) {
-  const { updatePolicy, policies, notify, adjustBalance } = usePortal();
-  const kinds: { id: ChangeKind; label: string }[] = policy.type === 'Auto'
-    ? [{ id: 'add-vehicle', label: 'Add a vehicle' }, { id: 'replace-vehicle', label: 'Replace a vehicle' }, { id: 'remove-vehicle', label: 'Remove a vehicle' }, { id: 'add-driver', label: 'Add a driver' }, { id: 'remove-driver', label: 'Remove a driver' }, { id: 'auto-coverage', label: 'Change coverages / deductibles' }]
-    : [{ id: 'home-coverage', label: 'Change coverages / deductible' }];
-  const [kind, setKind] = useState<ChangeKind>(kinds[0].id);
-  const [effective, setEffective] = useState(clampToTerm(today(), policy));
-  const [draft, setDraft] = useState<Policy>(policy);
-  const [sub, setSub] = useState<'vehicle' | 'driver' | null>(null);
-  const [targetId, setTargetId] = useState('');
-  const multiPolicy = policies.filter((p) => p.customerId === policy.customerId && (p.type === 'Auto' || p.type === 'Home') && p.status !== 'Cancelled').length > 1;
-  // The issued premium can include account-level bundle credits that reRate doesn't model, so scale the
-  // re-rated change against a re-rate of the unchanged policy instead of comparing raw totals.
-  const basePremium = useMemo(() => reRate(policy, state, multiPolicy), [policy, state, multiPolicy]);
-  const newPremium = useMemo(() => { const rated = reRate(draft, state, multiPolicy); return basePremium > 0 ? Math.round((rated * policy.premium) / basePremium) : rated; }, [draft, state, multiPolicy, basePremium, policy.premium]);
-  const dateValid = /^\d{4}-\d{2}-\d{2}$/.test(effective) && effective >= policy.effective && effective <= policy.expiration;
-  const daysLeft = dateValid ? Math.max(0, (new Date(policy.expiration).getTime() - new Date(effective).getTime()) / 86400000) : 0;
-  const proRata = Math.round(((newPremium - policy.premium) * daysLeft) / 365 * 100) / 100;
-
-  useEffect(() => { setDraft(policy); setTargetId(''); }, [kind, policy]);
-
-  const a = draft.autoCoverages;
-  const h = draft.homeCoverages;
-  const setA = (patch: Partial<AutoCoverages>) => setDraft({ ...draft, autoCoverages: { ...a!, ...patch } });
-  const setH = (patch: Partial<HomeCoverages>) => setDraft({ ...draft, homeCoverages: { ...h!, ...patch } });
-  const changed = JSON.stringify(draft) !== JSON.stringify(policy);
-  const removesLastVehicle = policy.type === 'Auto' && draft.vehicles.length === 0;
-  const canSubmit = changed && dateValid && !removesLastVehicle;
-
-  const describe = () => {
-    const label = kinds.find((k) => k.id === kind)?.label ?? 'Policy change';
-    if (kind === 'add-vehicle' || kind === 'replace-vehicle') { const added = draft.vehicles.find((v) => !policy.vehicles.some((p) => p.id === v.id)); return `${label}: ${added ? `${added.year} ${added.make} ${added.model}` : ''}`; }
-    if (kind === 'add-driver') { const added = draft.drivers.find((d) => !policy.drivers.some((p) => p.id === d.id)); return `${label}: ${added ? `${added.firstName} ${added.lastName}` : ''}`; }
-    return label;
-  };
-
-  const submit = () => {
-    if (!canSubmit) return;
-    updatePolicy(policy.number, { drivers: draft.drivers, vehicles: draft.vehicles, autoCoverages: draft.autoCoverages, homeCoverages: draft.homeCoverages, premium: newPremium, description: policy.type === 'Auto' ? `${draft.vehicles.length} vehicle${draft.vehicles.length === 1 ? '' : 's'} · ${draft.drivers.length} driver${draft.drivers.length === 1 ? '' : 's'}` : policy.description, documents: [{ name: `Amended Declarations — ${describe()}`, date: effective, kind: 'Endorsement' }, ...(policy.type === 'Auto' && kind.includes('vehicle') ? [{ name: 'Auto ID Cards (amended)', date: effective, kind: 'ID Card' as const }] : []), ...policy.documents] }, `${describe()} effective ${effective}. Premium ${proRata >= 0 ? '+' : '−'}${money(Math.abs(proRata), true)} pro rata`);
-    adjustBalance(policy.number, proRata);
-    notify(`Policy change processed. New annual premium ${money(newPremium)}.`);
-    onClose();
-  };
-
-  return <Modal title={`Policy change — ${policy.number}`} wide onClose={onClose} footer={<><span className="modal-premium">New annual premium <strong>{money(newPremium)}</strong> · {proRata >= 0 ? 'Additional' : 'Return'} premium {money(Math.abs(proRata), true)}</span><button type="button" className="px-btn ghost" onClick={onClose}>Cancel</button><button type="button" className="px-btn" disabled={!canSubmit} onClick={submit}>Process change</button></>}>
-    <div className="px-grid2"><Field label="Type of change"><select value={kind} onChange={(e) => setKind(e.target.value as ChangeKind)}>{kinds.map((k) => <option key={k.id} value={k.id}>{k.label}</option>)}</select></Field><Field label="Effective date"><input type="date" value={effective} min={policy.effective} max={policy.expiration} onChange={(e) => setEffective(e.target.value)} /></Field></div>
-    {!dateValid && <p className="needs">Choose an effective date within the policy term ({policy.effective} – {policy.expiration}).</p>}
-    {kind === 'add-vehicle' && <div className="change-box"><button type="button" className="px-btn ghost" onClick={() => setSub('vehicle')}>Enter vehicle details</button>{draft.vehicles.length > policy.vehicles.length && <p>Adding: {draft.vehicles[draft.vehicles.length - 1].year} {draft.vehicles[draft.vehicles.length - 1].make} {draft.vehicles[draft.vehicles.length - 1].model}</p>}</div>}
-    {(kind === 'replace-vehicle' || kind === 'remove-vehicle') && <div className="change-box"><Field label="Vehicle"><select value={targetId} onChange={(e) => { setTargetId(e.target.value); if (kind === 'remove-vehicle') setDraft({ ...policy, vehicles: policy.vehicles.filter((v) => v.id !== e.target.value) }); }}><option value="">-- Select --</option>{policy.vehicles.map((v) => <option key={v.id} value={v.id}>{v.year} {v.make} {v.model}</option>)}</select></Field>{kind === 'replace-vehicle' && targetId && <button type="button" className="px-btn ghost" onClick={() => setSub('vehicle')}>Enter replacement vehicle</button>}{kind === 'remove-vehicle' && (policy.vehicles.length === 1 || removesLastVehicle) && <p className="needs">The last vehicle cannot be removed — cancel the policy instead.</p>}</div>}
-    {kind === 'add-driver' && <div className="change-box"><button type="button" className="px-btn ghost" onClick={() => setSub('driver')}>Enter driver details</button>{draft.drivers.length > policy.drivers.length && <p>Adding: {draft.drivers[draft.drivers.length - 1].firstName} {draft.drivers[draft.drivers.length - 1].lastName}</p>}</div>}
-    {kind === 'remove-driver' && <div className="change-box"><Field label="Driver"><select value={targetId} onChange={(e) => { setTargetId(e.target.value); setDraft({ ...policy, drivers: policy.drivers.filter((d) => d.id !== e.target.value) }); }}><option value="">-- Select --</option>{policy.drivers.filter((d) => d.relationship !== 'Named Insured').map((d) => <option key={d.id} value={d.id}>{d.firstName} {d.lastName}</option>)}</select></Field><p className="px-muted">Household members who remain licensed must be excluded with form AU-220.</p></div>}
-    {kind === 'auto-coverage' && a && <div className="px-grid3"><Field label="Bodily injury"><select value={a.bodilyInjury} onChange={(e) => setA({ bodilyInjury: e.target.value })}>{BI_OPTIONS.map((o) => <option key={o}>{o}</option>)}</select></Field><Field label="Comprehensive deductible"><select value={a.comprehensiveDeductible} onChange={(e) => setA({ comprehensiveDeductible: Number(e.target.value) })}>{[0, 100, 250, 500, 1000].map((o) => <option key={o} value={o}>${o}</option>)}</select></Field><Field label="Collision deductible"><select value={a.collisionDeductible} onChange={(e) => setA({ collisionDeductible: Number(e.target.value) })}>{[100, 250, 500, 1000, 2000].map((o) => <option key={o} value={o}>${o}</option>)}</select></Field><label className="px-checks"><input type="checkbox" checked={a.autoPlus} onChange={(e) => setA({ autoPlus: e.target.checked })} /> ERIE Auto Plus®</label><label className="px-checks"><input type="checkbox" checked={a.emergencyRoadService} onChange={(e) => setA({ emergencyRoadService: e.target.checked })} /> Emergency road service</label><label className="px-checks"><input type="checkbox" checked={a.transportationExpense} onChange={(e) => setA({ transportationExpense: e.target.checked })} /> Transportation expenses</label><label className="px-checks"><input type="checkbox" checked={a.newAutoSecurity} onChange={(e) => setA({ newAutoSecurity: e.target.checked })} /> New Auto Security</label></div>}
-    {kind === 'home-coverage' && h && <div className="px-grid3">{h.form !== 'HO-4' && <Field label={h.form === 'HO-6' ? 'Coverage A — Additions & alterations' : 'Coverage A — Dwelling'}><input type="number" step={5000} min={0} value={h.dwelling} onChange={(e) => setH({ dwelling: Math.max(0, Number(e.target.value) || 0) })} /></Field>}{(h.form === 'HO-4' || h.form === 'HO-6' || h.form === 'DP-3') && <Field label={h.form === 'DP-3' ? 'Coverage C — Landlord furnishings' : 'Coverage C — Personal property'}><input type="number" step={1000} min={0} value={h.contentsLimit ?? 0} onChange={(e) => setH({ contentsLimit: Math.max(0, Number(e.target.value) || 0) })} /></Field>}<Field label="Personal liability"><select value={h.personalLiability} onChange={(e) => setH({ personalLiability: Number(e.target.value) })}>{[100000, 300000, 500000, 1000000].map((o) => <option key={o} value={o}>{money(o)}</option>)}</select></Field><Field label="Deductible"><select value={h.deductible} onChange={(e) => setH({ deductible: Number(e.target.value) })}>{[500, 1000, 2500, 5000].map((o) => <option key={o} value={o}>{money(o)}</option>)}</select></Field><label className="px-checks"><input type="checkbox" checked={h.waterBackup} onChange={(e) => setH({ waterBackup: e.target.checked })} /> Water backup</label><label className="px-checks"><input type="checkbox" checked={h.equipmentBreakdown} onChange={(e) => setH({ equipmentBreakdown: e.target.checked })} /> Equipment breakdown</label><label className="px-checks"><input type="checkbox" checked={h.identityRecovery} onChange={(e) => setH({ identityRecovery: e.target.checked })} /> Identity recovery</label></div>}
-    {sub === 'vehicle' && <VehicleModal vehicle={{ id: `V${Date.now()}`, year: new Date().getFullYear() - 2, make: 'Toyota', model: '', vin: '', use: 'Commute', annualMiles: 12000, garagingZip: policy.vehicles[0]?.garagingZip ?? '', antiTheft: true, airbags: true, antiLock: true, lienholder: '', reducedUsage: false }} onClose={() => setSub(null)} onSave={(v: Vehicle) => { setDraft({ ...policy, vehicles: kind === 'replace-vehicle' ? policy.vehicles.map((x) => (x.id === targetId ? v : x)) : [...policy.vehicles, v] }); setSub(null); }} />}
-    {sub === 'driver' && <DriverModal driver={{ id: `D${Date.now()}`, firstName: '', lastName: policy.drivers[0]?.lastName ?? '', dob: '', gender: 'M', maritalStatus: 'Single', relationship: 'Other Household', licenseState: 'WI', licenseNumber: '', yearsLicensed: 0, violations: 0, accidents: 0, driverTraining: false, goodStudent: false }} onClose={() => setSub(null)} onSave={(d: Driver) => { setDraft({ ...policy, drivers: [...policy.drivers, d] }); setSub(null); }} />}
-  </Modal>;
-}
-
 // Default dates must fall inside the policy term (a newly issued policy may start in the future).
-const clampToTerm = (date: string, p: Policy) => (date < p.effective ? p.effective : date > p.expiration ? p.expiration : date);
 
 function CancelModal({ policy, onClose, onConfirm }: { policy: Policy; onClose: () => void; onConfirm: (reason: string, date: string) => void }) {
   const [reason, setReason] = useState('Insured request — replaced coverage elsewhere');
@@ -226,8 +187,8 @@ function CancelModal({ policy, onClose, onConfirm }: { policy: Policy; onClose: 
   </Modal>;
 }
 
-function IdCardModal({ policy, insured, onClose }: { policy: Policy; insured: string; onClose: () => void }) {
-  return <Modal title="Auto ID cards" wide onClose={onClose} footer={<button type="button" className="px-btn" onClick={() => window.print()}><Printer size={14} /> Print</button>}>
+function IdCardModal({ policy, insured, onPrint, onClose }: { policy: Policy; insured: string; onPrint: () => void; onClose: () => void }) {
+  return <Modal title="Auto ID cards" wide onClose={onClose} footer={<button type="button" className="px-btn" onClick={onPrint}><Printer size={14} /> Print / Save as PDF</button>}>
     <div className="id-cards printable">{policy.vehicles.map((v) => <div className="id-card" key={v.id}><div className="id-card-head"><span className="quote-erie-mark small">⌂</span><strong>Erie Insurance Exchange</strong><em>{policy.drivers[0]?.licenseState ?? 'WI'} Insurance Identification Card</em></div><dl><dt>Policy number</dt><dd className="mono">{policy.number}</dd><dt>Effective</dt><dd>{policy.effective}</dd><dt>Expires</dt><dd>{policy.expiration}</dd><dt>Named insured</dt><dd>{insured}</dd><dt>Vehicle</dt><dd>{v.year} {v.make} {v.model}</dd><dt>VIN</dt><dd className="mono">{v.vin}</dd></dl><footer>Agent: {AGENT.agency} · {AGENT.phone} · Claims (800) 367-3743</footer></div>)}</div>
   </Modal>;
 }
