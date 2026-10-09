@@ -7,7 +7,9 @@ import type { AutoCoverages, BillingAccount, Claim, CommercialLine, Customer, En
 
 const STORAGE_KEY = 'erie-agentexchange-demo-v1';
 
-const today = () => new Date().toISOString().slice(0, 10);
+// Local calendar date (toISOString is UTC, which rolls over to tomorrow in the US evening).
+const localDate = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+const today = () => localDate(new Date());
 const nowIso = () => new Date().toISOString().slice(0, 19);
 const randomDigits = (length: number) => Array.from({ length }, () => Math.floor(Math.random() * 10)).join('');
 const addYears = (date: string, years: number) => { const d = new Date(`${date}T12:00:00`); d.setFullYear(d.getFullYear() + years); return d.toISOString().slice(0, 10); };
@@ -15,12 +17,14 @@ const addDays = (date: string, days: number) => { const d = new Date(`${date}T12
 const addMonths = (date: string, months: number) => { const d = new Date(`${date}T12:00:00`); d.setMonth(d.getMonth() + months); return d.toISOString().slice(0, 10); };
 
 const policyPrefix: Record<PolicyType, string> = { Auto: 'A05', Home: 'H07', Boat: 'B09', Life: 'L22', Umbrella: 'U03', Business: 'Q97', 'Commercial Auto': 'CA1', 'Workers Comp': 'WC4' };
+// The most recent cancellation entry decides why a policy is pending cancel (history is newest first).
+const isNonPaymentCancel = (p: Policy) => /non-payment/i.test(p.history.find((h) => /cancel/i.test(h.text) && !/rescinded/i.test(h.text))?.text ?? '');
 const clone = <T,>(value: T): T => JSON.parse(JSON.stringify(value)) as T;
 
 // Older saved data used a single "Roadside & Rentals" flag and fixed B/C/D percentages.
 type LegacyAuto = AutoCoverages & { roadsideRentals?: boolean };
-const migrateAuto = (a?: LegacyAuto): AutoCoverages | undefined => (a ? { ...a, emergencyRoadService: a.emergencyRoadService ?? !!a.roadsideRentals, transportationExpense: a.transportationExpense ?? !!a.roadsideRentals } : a);
-const migrateHome = (h?: HomeCoverages): HomeCoverages | undefined => (h ? { ...h, otherStructuresPct: h.otherStructuresPct ?? 10, personalPropertyPct: h.personalPropertyPct ?? 70, lossOfUsePct: h.lossOfUsePct ?? 20 } : h);
+export const migrateAuto = (a?: LegacyAuto): AutoCoverages | undefined => (a ? { ...a, emergencyRoadService: a.emergencyRoadService ?? !!a.roadsideRentals, transportationExpense: a.transportationExpense ?? !!a.roadsideRentals } : a);
+export const migrateHome = (h?: HomeCoverages): HomeCoverages | undefined => (h ? { ...h, otherStructuresPct: h.otherStructuresPct ?? 10, personalPropertyPct: h.personalPropertyPct ?? 70, lossOfUsePct: h.lossOfUsePct ?? 20 } : h);
 const adjusters = [
   { name: 'Megan Reilly', phone: '(800) 367-3743 x4471', email: 'megan.reilly@erieinsurance.example' },
   { name: 'Carlos Medina', phone: '(800) 367-3743 x5120', email: 'carlos.medina@erieinsurance.example' },
@@ -95,7 +99,9 @@ export function rateCommercialLine(line: CommercialLine, quote: Quote): PremiumB
  */
 export function rateQuote(quote: Quote, existing: Policy[] = [], payPlan = quote.payPlan): ErieQuoteResult {
   const has = (p: Quote['products'][number]) => quote.products.includes(p);
-  const holds = (t: PolicyType) => existing.some((p) => p.type === t && p.status !== 'Cancelled');
+  // In-force policies other than the ones this quote itself issued.
+  const others = existing.filter((p) => p.status !== 'Cancelled' && p.quoteId !== quote.id);
+  const holds = (t: PolicyType) => others.some((p) => p.type === t);
   const multiPolicy = (has('auto') || holds('Auto')) && (has('home') || holds('Home')) && (has('auto') || has('home'));
   const daysOut = (new Date(quote.effectiveDate).getTime() - Date.now()) / 86400000;
   const state = quote.applicant.state;
@@ -103,7 +109,7 @@ export function rateQuote(quote: Quote, existing: Policy[] = [], payPlan = quote
   if (has('auto')) lines.push({ key: 'auto', breakdown: rateAuto(state, quote.drivers, quote.vehicles, quote.autoCoverages, { multiPolicy, payPlan, autoPay: quote.autoPay }) });
   if (has('home')) lines.push({ key: 'home', breakdown: rateHome(state, quote.property, quote.homeCoverages, { multiPolicy, earlyQuote: daysOut >= 7, payPlan }) });
   if (has('umbrella')) lines.push({ key: 'umbrella', breakdown: rateUmbrella(state, quote.umbrella) });
-  if (has('boat')) lines.push({ key: 'boat', breakdown: rateBoat(state, quote.boat, { multiPolicy: quote.products.length > 1 || existing.length > 0, payPlan }) });
+  if (has('boat')) lines.push({ key: 'boat', breakdown: rateBoat(state, quote.boat, { multiPolicy: quote.products.length > 1 || others.length > 0, payPlan }) });
   if (has('life')) lines.push({ key: 'life', breakdown: rateLife(ageFrom(quote.applicant.dob), quote.life) });
   if (has('commercial')) quote.commercial.lines.forEach((line) => lines.push({ key: `commercial:${line}`, breakdown: rateCommercialLine(line, quote) }));
   return calculateErieQuote({
@@ -195,7 +201,12 @@ export function PortalStoreProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const deleteQuotes = useCallback((ids: string[]) => setData((current) => ({ ...current, quotes: current.quotes.filter((q) => !ids.includes(q.id)) })), []);
-  const archiveQuotes = useCallback((ids: string[], archived: boolean) => setData((current) => ({ ...current, quotes: current.quotes.map((q) => (ids.includes(q.id) ? { ...q, status: archived ? 'Archived' : 'Quote', updatedAt: nowIso() } : q)) })), []);
+  const archiveQuotes = useCallback((ids: string[], archived: boolean) => setData((current) => ({ ...current, quotes: current.quotes.map((q) => {
+    // Issued quotes belong to the policy record and are never archived.
+    if (!ids.includes(q.id) || q.status === 'Issued') return q;
+    if (archived) return q.status === 'Archived' ? q : { ...q, status: 'Archived', preArchiveStatus: q.status, updatedAt: nowIso() };
+    return { ...q, status: q.preArchiveStatus ?? 'Quote', preArchiveStatus: undefined, updatedAt: nowIso() };
+  }) })), []);
 
   const issueQuote = useCallback((id: string) => {
     const issued: string[] = [];
@@ -275,7 +286,7 @@ export function PortalStoreProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const updateClaim = useCallback((number: string, patch: Partial<Claim>, note?: string) => {
-    setData((current) => ({ ...current, claims: current.claims.map((c) => (c.number === number ? { ...c, ...patch, notes: note ? [...c.notes, { date: today(), author: AGENT.name, text: note }] : c.notes } : c)) }));
+    setData((current) => ({ ...current, claims: current.claims.map((c) => (c.number === number ? { ...c, ...patch, notes: note ? [...(patch.notes ?? c.notes), { date: today(), author: AGENT.name, text: note }] : (patch.notes ?? c.notes) } : c)) }));
   }, []);
 
   const makePayment = useCallback((policyNumber: string, amount: number, method: string) => {
@@ -287,7 +298,7 @@ export function PortalStoreProvider({ children }: { children: ReactNode }) {
       return {
         ...current,
         billing: current.billing.map((b) => (b.policyNumber === policyNumber ? { ...b, balance: Math.max(0, Math.round((b.balance - amount) * 100) / 100), minimumDue: Math.max(0, Math.round((b.minimumDue - amount) * 100) / 100), payments: [payment, ...b.payments] } : b)),
-        policies: current.policies.map((p) => (p.number === policyNumber && curesPastDue && p.status === 'Pending Cancel' && p.history[0]?.text.includes('non-payment') ? { ...p, status: 'Active', history: [{ date: today(), text: `Payment ${payment.confirmation} received — non-payment cancellation rescinded`, by: 'System' }, ...p.history] } : p)),
+        policies: current.policies.map((p) => (p.number === policyNumber && curesPastDue && p.status === 'Pending Cancel' && isNonPaymentCancel(p) ? { ...p, status: 'Active', history: [{ date: today(), text: `Payment ${payment.confirmation} received — non-payment cancellation rescinded`, by: 'System' }, ...p.history] } : p)),
       };
     });
     return payment;
@@ -302,7 +313,12 @@ export function PortalStoreProvider({ children }: { children: ReactNode }) {
   const updateLead = useCallback((id: string, status: Lead['status']) => setData((current) => ({ ...current, leads: current.leads.map((l) => (l.id === id ? { ...l, status } : l)) })), []);
   const addEnvelope = useCallback((envelope: Omit<Envelope, 'id' | 'sent' | 'status'>) => setData((current) => ({ ...current, envelopes: [{ ...envelope, id: `ES-${randomDigits(5)}`, sent: today(), status: 'Sent' }, ...current.envelopes] })), []);
   const updateEnvelope = useCallback((id: string, status: Envelope['status']) => setData((current) => ({ ...current, envelopes: current.envelopes.map((e) => (e.id === id ? { ...e, status, sent: status === 'Sent' ? today() : e.sent } : e)) })), []);
-  const resetDemo = useCallback(() => setData(createSeed()), []);
+  const resetDemo = useCallback(() => {
+    setData(createSeed());
+    // Work items marked done refer to seed records, so they come back with the reset.
+    try { localStorage.removeItem('erie-agentexchange-dismissed-work'); } catch { /* storage unavailable */ }
+    window.dispatchEvent(new Event('erie-work-dismissed'));
+  }, []);
 
   const value = useMemo<StoreValue>(() => ({ ...data, toasts, notify, dismissToast, saveQuote, deleteQuotes, archiveQuotes, issueQuote, updateCustomer, updatePolicy, cancelPolicy, reinstatePolicy, addClaim, updateClaim, makePayment, adjustBalance, setAutoPay, updateLead, addEnvelope, updateEnvelope, resetDemo }), [data, toasts, notify, dismissToast, saveQuote, deleteQuotes, archiveQuotes, issueQuote, updateCustomer, updatePolicy, cancelPolicy, reinstatePolicy, addClaim, updateClaim, makePayment, adjustBalance, setAutoPay, updateLead, addEnvelope, updateEnvelope, resetDemo]);
 

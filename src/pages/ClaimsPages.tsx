@@ -2,15 +2,39 @@ import { ChangeEvent, useMemo, useState } from 'react';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { Car, Check, CheckCircle2, Mail, Paperclip, Phone, Plus, Shield } from 'lucide-react';
 import PortalLayout from '@/components/PortalLayout';
+import { telHref } from '@/lib/validation';
 import { Empty, Field, PageTitle, Panel, StatusBadge } from '@/components/ui';
 import { fullName, today, usePortal } from '@/data/store';
 import { money } from '@/lib/rating';
-import type { ClaimStatus } from '@/data/types';
+import type { ClaimStatus, Policy, PolicyType } from '@/data/types';
 
 const lifecycle: ClaimStatus[] = ['Reported', 'Assigned', 'Inspection', 'Estimate Review', 'Repair In Progress', 'Payment Issued', 'Closed'];
 const autoLossTypes = ['Auto — Collision', 'Auto — Comprehensive (Glass)', 'Auto — Comprehensive (Theft)', 'Auto — Comprehensive (Animal)', 'Auto — Comprehensive (Weather)', 'Auto — Liability (other party)'];
 const homeLossTypes = ['Home — Wind/Hail', 'Home — Water Damage', 'Home — Fire/Smoke', 'Home — Theft/Burglary', 'Home — Liability (injury on premises)', 'Home — Lightning/Power Surge'];
-const DRP_SHOPS = ['Crawford County Collision (Direct Repair Program)', 'Madison Auto Body (Direct Repair Program)', 'Waukesha Collision Center (Direct Repair Program)', "Customer's choice of shop"];
+const lossTypesByPolicy: Record<PolicyType, string[]> = {
+  Auto: autoLossTypes,
+  Home: homeLossTypes,
+  Boat: ['Boat — Collision / allision', 'Boat — Sinking or swamping', 'Boat — Theft', 'Boat — Storm damage', 'Boat — Liability (injury or damage to others)'],
+  Umbrella: ['Umbrella — Excess liability claim'],
+  Business: ['Business — Fire / smoke', 'Business — Wind / hail', 'Business — Water damage', 'Business — Theft / burglary', 'Business — General liability (third-party injury)', 'Business — Income interruption', 'Contractors — Equipment or tools loss'],
+  'Commercial Auto': ['Commercial auto — Collision', 'Commercial auto — Comprehensive', 'Commercial auto — Liability (other party)', 'Garagekeepers — Customer vehicle damage'],
+  'Workers Comp': ['Workers comp — Medical-only injury', 'Workers comp — Lost-time injury'],
+  Life: [],
+};
+
+// Life claims go through Erie Family Life, and cancelled policies can't take new losses.
+const claimable = (p: Policy) => p.status !== 'Cancelled' && p.type !== 'Life';
+
+function deductibleFor(p: Policy, lossType: string) {
+  if (p.type === 'Auto') return /Collision/.test(lossType) ? p.autoCoverages?.collisionDeductible ?? 500 : p.autoCoverages?.comprehensiveDeductible ?? 250;
+  if (p.type === 'Home') return p.homeCoverages?.deductible ?? 1000;
+  if (p.type === 'Boat') return p.boat?.deductible ?? 500;
+  if (p.type === 'Commercial Auto') return /Liability/.test(lossType) ? 0 : p.commercialAuto?.physicalDamageDeductible ?? 1000;
+  if (p.type === 'Business') return /liability|Income/i.test(lossType) ? 0 : p.business?.propertyDeductible ?? 1000;
+  return 0;
+}
+
+const DRP_SHOPS = ['Dane County Collision (Direct Repair Program)', 'Madison Auto Body (Direct Repair Program)', 'Waukesha Collision Center (Direct Repair Program)', "Customer's choice of shop"];
 
 export function ClaimsListPage() {
   const { claims, customers } = usePortal();
@@ -42,24 +66,26 @@ export function ClaimReportPage() {
   const navigate = useNavigate();
   const { policies, customers, addClaim, notify } = usePortal();
   const [step, setStep] = useState(0);
-  const [policyNumber, setPolicyNumber] = useState(params.get('policy') ?? '');
+  const requested = policies.find((p) => p.number === params.get('policy'));
+  const preselected = requested && claimable(requested) ? requested : undefined;
+  const [policyNumber, setPolicyNumber] = useState(preselected?.number ?? '');
   const [lookup, setLookup] = useState('');
-  const preselected = policies.find((p) => p.number === params.get('policy'));
   const [form, setForm] = useState({ lossDate: today(), lossTime: '12:00', lossType: '', location: '', description: '', injuries: false, policeReport: '', otherParty: '', vehicleId: preselected?.vehicles[0]?.id ?? '', drivable: true, repairShop: DRP_SHOPS[0], rental: true, mitigation: false, contactPhone: customers.find((c) => c.id === preselected?.customerId)?.phone ?? '' });
   const [attachments, setAttachments] = useState<string[]>([]);
   const [errors, setErrors] = useState<string[]>([]);
   const customerFilter = params.get('customer');
-  const eligible = policies.filter((p) => p.status !== 'Cancelled' && p.type !== 'Life' && (!customerFilter || p.customerId === customerFilter) && `${p.number} ${fullName(customers.find((c) => c.id === p.customerId) ?? { firstName: '', lastName: '' })}`.toLowerCase().includes(lookup.toLowerCase()));
+  const eligible = policies.filter((p) => claimable(p) && (!customerFilter || p.customerId === customerFilter) && `${p.number} ${fullName(customers.find((c) => c.id === p.customerId) ?? { firstName: '', lastName: '' })}`.toLowerCase().includes(lookup.toLowerCase()));
   const policy = policies.find((p) => p.number === policyNumber);
   const customer = policy ? customers.find((c) => c.id === policy.customerId) : undefined;
   const isAuto = policy?.type === 'Auto';
-  const lossTypes = isAuto ? autoLossTypes : homeLossTypes;
+  const lossTypes = policy ? lossTypesByPolicy[policy.type] : [];
   const set = <K extends keyof typeof form>(key: K, value: (typeof form)[K]) => setForm({ ...form, [key]: value });
+  const blockedRequest = requested && !claimable(requested) ? requested : undefined;
   const steps = ['Policy', 'Loss details', isAuto ? 'Vehicle & repair' : 'Damage & mitigation', 'Review & submit'];
 
   const validate = () => {
     const problems: string[] = [];
-    if (step === 0 && !policy) problems.push('Select the policy the loss is reported under.');
+    if (step === 0 && (!policy || !claimable(policy))) problems.push('Select an active, non-life policy the loss is reported under.');
     if (step === 1) {
       if (!form.lossType) problems.push('Select the type of loss.');
       if (form.lossDate > today()) problems.push('Loss date cannot be in the future.');
@@ -80,7 +106,7 @@ export function ClaimReportPage() {
   const submit = () => {
     if (!policy) return;
     const vehicle = policy.vehicles.find((v) => v.id === form.vehicleId);
-    const number = addClaim({ policyNumber: policy.number, customerId: policy.customerId, lossDate: form.lossDate, lossType: form.lossType, location: form.location, description: `${form.description}${vehicle ? ` Vehicle: ${vehicle.year} ${vehicle.make} ${vehicle.model}${form.drivable ? '' : ' (not drivable)'}.` : ''}${form.otherParty ? ` Other party: ${form.otherParty}.` : ''}`, injuries: form.injuries, policeReport: form.policeReport, repairShop: isAuto ? form.repairShop : form.mitigation ? 'Mitigation vendor requested' : '', rental: isAuto && form.rental ? 'Rental requested — Roadside & Rentals / transportation expense' : '', deductible: isAuto ? (form.lossType.includes('Collision') ? policy.autoCoverages?.collisionDeductible ?? 500 : policy.autoCoverages?.comprehensiveDeductible ?? 250) : policy.homeCoverages?.deductible ?? 1000, attachments });
+    const number = addClaim({ policyNumber: policy.number, customerId: policy.customerId, lossDate: form.lossDate, lossType: form.lossType, location: form.location, description: `${form.description}${vehicle ? ` Vehicle: ${vehicle.year} ${vehicle.make} ${vehicle.model}${form.drivable ? '' : ' (not drivable)'}.` : ''}${form.otherParty ? ` Other party: ${form.otherParty}.` : ''}`, injuries: form.injuries, policeReport: form.policeReport, repairShop: isAuto ? form.repairShop : form.mitigation ? 'Mitigation vendor requested' : '', rental: isAuto && form.rental ? 'Rental requested — transportation expenses' : '', deductible: deductibleFor(policy, form.lossType), attachments });
     notify(`Claim ${number} reported. An adjuster will contact the customer within 24 hours.`);
     navigate(`/claims/${number}?new=1`);
   };
@@ -90,6 +116,7 @@ export function ClaimReportPage() {
     <PageTitle crumbs={[{ label: 'Claims', to: '/claims' }, { label: 'Report a claim' }]} title="First Notice of Loss" subtitle="Report the loss as soon as possible. Emergency? Advise the customer to call 911 first." />
     <ol className="wizard-steps compact">{steps.map((s, i) => <li key={s} className={`${i === step ? 'current' : ''} ${i < step ? 'done' : ''}`}><button type="button" disabled={i > step} onClick={() => setStep(i)}><span>{i < step ? <Check size={12} /> : i + 1}</span>{s}</button></li>)}</ol>
     <Panel>
+      {step === 0 && blockedRequest && <div className="px-note">{blockedRequest.type === 'Life' ? `Life claims for ${blockedRequest.number} are handled by Erie Family Life — call (800) 458-0811.` : `${blockedRequest.number} is cancelled and can’t take a new claim.`} Choose another policy below.</div>}
       {step === 0 && <><Field label="Find policy"><input value={lookup} onChange={(e) => setLookup(e.target.value)} placeholder="Policy number or insured name" /></Field><div className="select-list">{eligible.map((p) => { const c = customers.find((x) => x.id === p.customerId); return <label key={p.number} className={policyNumber === p.number ? 'on' : ''}><input type="radio" name="policy" checked={policyNumber === p.number} onChange={() => { setPolicyNumber(p.number); setForm({ ...form, lossType: '', vehicleId: p.vehicles[0]?.id ?? '', contactPhone: c?.phone ?? '' }); }} /><span><strong>{p.type} · {p.number}</strong><small>{c ? fullName(c) : ''} · {p.description}</small></span><StatusBadge status={p.status} /></label>; })}{eligible.length === 0 && <Empty>No matching policies.</Empty>}</div></>}
       {step === 1 && <div className="px-grid3">
         <Field label="Date of loss" required><input type="date" value={form.lossDate} max={today()} onChange={(e) => set('lossDate', e.target.value)} /></Field>
@@ -112,7 +139,7 @@ export function ClaimReportPage() {
         <div className="px-note span2">Remind the customer to prevent further damage and keep receipts — reasonable mitigation expenses are covered.</div>
       </div>)}
       {step === 2 && <div className="attach"><label className="px-btn ghost"><Paperclip size={14} /> Attach photos / documents<input type="file" multiple hidden onChange={onFiles} /></label>{attachments.map((a) => <span key={a} className="policy-pill">{a}</span>)}</div>}
-      {step === 3 && policy && <dl className="px-dl two"><dt>Policy</dt><dd>{policy.type} {policy.number}</dd><dt>Insured</dt><dd>{customer ? fullName(customer) : ''}</dd><dt>Loss</dt><dd>{form.lossType} on {form.lossDate} at {form.lossTime}</dd><dt>Location</dt><dd>{form.location}</dd><dt>Description</dt><dd>{form.description}</dd><dt>Injuries</dt><dd>{form.injuries ? 'Yes — bodily injury adjuster will be assigned' : 'No'}</dd>{isAuto && <><dt>Vehicle</dt><dd>{policy.vehicles.find((v) => v.id === form.vehicleId)?.model}</dd><dt>Repair</dt><dd>{form.repairShop}</dd><dt>Rental</dt><dd>{form.rental ? 'Requested' : 'Not needed'}</dd></>}<dt>Attachments</dt><dd>{attachments.join(', ') || 'None'}</dd><dt>Deductible</dt><dd>{money(isAuto ? (form.lossType.includes('Collision') ? policy.autoCoverages?.collisionDeductible ?? 500 : policy.autoCoverages?.comprehensiveDeductible ?? 250) : policy.homeCoverages?.deductible ?? 1000)}</dd></dl>}
+      {step === 3 && policy && <dl className="px-dl two"><dt>Policy</dt><dd>{policy.type} {policy.number}</dd><dt>Insured</dt><dd>{customer ? fullName(customer) : ''}</dd><dt>Loss</dt><dd>{form.lossType} on {form.lossDate} at {form.lossTime}</dd><dt>Location</dt><dd>{form.location}</dd><dt>Description</dt><dd>{form.description}</dd><dt>Injuries</dt><dd>{form.injuries ? 'Yes — bodily injury adjuster will be assigned' : 'No'}</dd>{isAuto && <><dt>Vehicle</dt><dd>{policy.vehicles.find((v) => v.id === form.vehicleId)?.model}</dd><dt>Repair</dt><dd>{form.repairShop}</dd><dt>Rental</dt><dd>{form.rental ? 'Requested' : 'Not needed'}</dd></>}<dt>Attachments</dt><dd>{attachments.join(', ') || 'None'}</dd><dt>Deductible</dt><dd>{money(deductibleFor(policy, form.lossType))}</dd></dl>}
       {errors.length > 0 && <ul className="quote-errors" role="alert">{errors.map((e) => <li key={e}>{e}</li>)}</ul>}
       <div className="px-form-actions"><button type="button" className="px-btn ghost" onClick={() => (step === 0 ? navigate('/claims') : setStep(step - 1))}>{step === 0 ? 'Cancel' : 'Previous'}</button>{step < 3 ? <button type="button" className="px-btn" onClick={next}>Continue</button> : <button type="button" className="px-btn" onClick={submit}><Shield size={14} /> Submit claim</button>}</div>
     </Panel>
@@ -154,7 +181,7 @@ export function ClaimDetailPage() {
         <Panel title="Payments">{claim.payments.length === 0 ? <Empty>No payments issued yet.</Empty> : <table className="px-table"><thead><tr><th>Date</th><th>Payee</th><th>Type</th><th>Amount</th></tr></thead><tbody>{claim.payments.map((p, i) => <tr key={i}><td>{p.date}</td><td>{p.payee}</td><td>{p.type}</td><td>{money(p.amount)}</td></tr>)}</tbody></table>}</Panel>
       </div>
       <div className="px-side-col">
-        <Panel title="Claims representative"><div className="adjuster"><strong>{claim.adjuster.name}</strong><a href={`tel:${claim.adjuster.phone.replace(/\D/g, '').slice(0, 11)}`}><Phone size={13} /> {claim.adjuster.phone}</a><a href={`mailto:${claim.adjuster.email}?subject=${encodeURIComponent(`Claim ${claim.number}`)}`}><Mail size={13} /> {claim.adjuster.email}</a></div></Panel>
+        <Panel title="Claims representative"><div className="adjuster"><strong>{claim.adjuster.name}</strong><a href={telHref(claim.adjuster.phone)}><Phone size={13} /> {claim.adjuster.phone}</a><a href={`mailto:${claim.adjuster.email}?subject=${encodeURIComponent(`Claim ${claim.number}`)}`}><Mail size={13} /> {claim.adjuster.email}</a></div></Panel>
         <Panel title="Financials"><div className="stat-pair"><div><span>Reserve</span><strong>{money(claim.reserve)}</strong></div><div><span>Paid to date</span><strong>{money(claim.paid)}</strong></div></div><p className="px-muted">Deductible: {money(claim.deductible)}</p></Panel>
         <Panel title="Attachments"><ul className="px-list">{claim.attachments.map((a) => <li key={a}><Paperclip size={12} /> {a}</li>)}{claim.attachments.length === 0 && <li className="px-muted">None</li>}</ul><label className="px-btn ghost wide"><Paperclip size={14} /> Upload files<input type="file" multiple hidden onChange={onFiles} /></label></Panel>
       </div>

@@ -11,6 +11,7 @@ import { AGENT } from '@/data/seed';
 import { STATES } from '@/data/content';
 import { ageFrom, BI_OPTIONS, bmi, ErieQuoteResult, installmentSchedule, money, PAY_PLANS, payPlanLabel, PD_OPTIONS, ratedLifeClass, UM_OPTIONS } from '@/lib/rating';
 import { loadTemplates, saveTemplates } from '@/lib/templates';
+import { validCardExpiry } from '@/lib/validation';
 import type { Driver, Policy, PremiumBreakdown, ProductKey, Quote, Vehicle } from '@/data/types';
 
 type StepKey = 'underwriting' | 'drivers' | 'vehicles' | 'property' | 'coverages' | 'umbrella' | 'boat' | 'life' | 'commercial' | 'summary' | 'application' | 'issued';
@@ -235,7 +236,8 @@ export default function QuoteWizard() {
   };
 
   const bind = () => {
-    const problems = validate('application');
+    // Re-check bind-critical steps: they may have been edited after they were passed.
+    const problems = [...(['umbrella', 'commercial'] as StepKey[]).filter((s) => steps.includes(s)).flatMap(validate), ...validate('application')];
     setErrors(problems);
     if (problems.length) return;
     saveQuote({ ...draft, status: 'Application', lastStep: 'issued' });
@@ -457,7 +459,7 @@ function CoveragesStep({ quote, update }: { quote: Quote; update: (patch: Partia
         <Field label="Uninsured / underinsured motorists"><select value={a.uninsuredMotorist} onChange={(e) => setA('uninsuredMotorist', e.target.value)}>{UM_OPTIONS.map((o) => <option key={o} value={o}>{(o.includes('CSL') ? `$${o.replace(' CSL', '')}K CSL` : `$${o.replace('/', 'K/$')}K`)}</option>)}</select></Field>
         <Field label="Medical payments / first party benefits"><select value={a.medicalPayments} onChange={(e) => setA('medicalPayments', e.target.value)}>{['None', '1,000', '5,000', '10,000'].map((o) => <option key={o} value={o}>{o === 'None' ? 'None' : `$${o}`}</option>)}</select></Field>
         <Field label="Comprehensive deductible"><select value={a.comprehensiveDeductible} onChange={(e) => setA('comprehensiveDeductible', Number(e.target.value))}>{[0, 100, 250, 500, 1000].map((o) => <option key={o} value={o}>{o === 0 ? 'Full glass / $0' : `$${o}`}</option>)}</select></Field>
-        <Field label="Collision deductible"><select value={a.collisionDeductible} onChange={(e) => setA('collisionDeductible', Number(e.target.value))}>{[100, 250, 500, 1000].map((o) => <option key={o} value={o}>${o.toLocaleString()}</option>)}</select></Field>
+        <Field label="Collision deductible"><select value={a.collisionDeductible} onChange={(e) => setA('collisionDeductible', Number(e.target.value))}>{[100, 250, 500, 1000, 2000].map((o) => <option key={o} value={o}>${o.toLocaleString()}</option>)}</select></Field>
       </div>
       <div className="endorsements">
         <Endorsement checked={a.rateLock} onChange={(v) => setA('rateLock', v)} title="ERIE Rate Lock®" price="Included">Premium changes only when a driver, vehicle or address changes — even after a claim.</Endorsement>
@@ -590,7 +592,7 @@ function ApplicationStep({ quote, update, total }: { quote: Quote; update: (patc
   const s = installmentSchedule(total, quote.payPlan, quote.autoPay);
   const setApplicant = (key: keyof Quote['applicant'], value: string) => update({ applicant: { ...quote.applicant, [key]: value } });
   const verifyPayment = () => {
-    const ok = payType === 'eft' ? /^\d{9}$/.test(pay.routing) && pay.account.length >= 4 : /^\d{15,16}$/.test(pay.card.replace(/\s/g, '')) && /^\d{2}\/\d{2}$/.test(pay.exp);
+    const ok = payType === 'eft' ? /^\d{9}$/.test(pay.routing) && pay.account.length >= 4 : /^\d{15,16}$/.test(pay.card.replace(/\s/g, '')) && validCardExpiry(pay.exp);
     update({ underwriting: { ...quote.underwriting, _payment: ok ? 'yes' : '' , _paymethod: ok ? (payType === 'eft' ? `Checking ••${pay.account.slice(-4)}` : `Card ••${pay.card.slice(-4)}`) : '' } });
   };
   return <>

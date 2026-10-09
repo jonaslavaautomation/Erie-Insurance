@@ -278,6 +278,8 @@ export type Quote = {
   createdAt: string;
   updatedAt: string;
   lastStep: string;
+  // Status before archiving, restored when the quote is un-archived.
+  preArchiveStatus?: QuoteStatus;
 };
 
 export type PolicyDocument = { name: string; date: string; kind: 'Declarations' | 'ID Card' | 'Application' | 'Endorsement' | 'Notice' | 'Bill' };

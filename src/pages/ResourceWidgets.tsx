@@ -6,21 +6,23 @@ import { courses, eriebooks, formsLibrary } from '@/data/content';
 import { fullName, today, usePortal } from '@/data/store';
 import { AGENT } from '@/data/seed';
 import { money } from '@/lib/rating';
+import { numberInput } from '@/lib/validation';
 import type { Envelope, Lead } from '@/data/types';
 
 export function HomeCostEstimator() {
-  const [f, setF] = useState({ sqft: 2200, construction: 'Frame', quality: 'Standard', stories: '2', garage: '2-car attached', roof: 'Asphalt Shingle', basement: 'Unfinished', zip: '53703' });
+  const [f, setF] = useState({ sqft: '2200', construction: 'Frame', quality: 'Standard', stories: '2', garage: '2-car attached', roof: 'Asphalt Shingle', basement: 'Unfinished', zip: '53703' });
   const base = { Frame: 158, Masonry: 182, 'Masonry Veneer': 171 }[f.construction] ?? 158;
   const quality = { Economy: 0.85, Standard: 1, Custom: 1.22, Premium: 1.45 }[f.quality] ?? 1;
   const stories = f.stories === '1' ? 1.04 : f.stories === '3' ? 0.95 : 0.97;
   const roof = { 'Asphalt Shingle': 1, Metal: 1.03, Slate: 1.08, Tile: 1.05 }[f.roof] ?? 1;
   const garage = { None: 0, '1-car attached': 18000, '2-car attached': 29000, '3-car attached': 41000, Detached: 24000 }[f.garage] ?? 0;
-  const basement = { None: 0, Unfinished: f.sqft * 0.25 * 32, Finished: f.sqft * 0.25 * 68 }[f.basement] ?? 0;
-  const estimate = Math.round((f.sqft * base * quality * stories * roof + garage + basement) / 1000) * 1000;
-  const set = (key: keyof typeof f, value: string | number) => setF({ ...f, [key]: value });
+  const sqft = numberInput(f.sqft);
+  const basement = { None: 0, Unfinished: sqft * 0.25 * 32, Finished: sqft * 0.25 * 68 }[f.basement] ?? 0;
+  const estimate = sqft > 0 ? Math.round((sqft * base * quality * stories * roof + garage + basement) / 1000) * 1000 : 0;
+  const set = (key: keyof typeof f, value: string) => setF({ ...f, [key]: value });
   return <Panel title="Estimate replacement cost">
     <div className="px-grid3">
-      <Field label="Finished square feet"><input type="number" step={50} value={f.sqft} onChange={(e) => set('sqft', Number(e.target.value))} /></Field>
+      <Field label="Finished square feet"><input type="number" min={0} step={50} value={f.sqft} onChange={(e) => set('sqft', e.target.value.replace(/^-/, ''))} /></Field>
       <Field label="Construction"><select value={f.construction} onChange={(e) => set('construction', e.target.value)}><option>Frame</option><option>Masonry</option><option>Masonry Veneer</option></select></Field>
       <Field label="Quality of construction"><select value={f.quality} onChange={(e) => set('quality', e.target.value)}><option>Economy</option><option>Standard</option><option>Custom</option><option>Premium</option></select></Field>
       <Field label="Stories"><select value={f.stories} onChange={(e) => set('stories', e.target.value)}><option>1</option><option>2</option><option>3</option></select></Field>
@@ -29,25 +31,26 @@ export function HomeCostEstimator() {
       <Field label="Basement"><select value={f.basement} onChange={(e) => set('basement', e.target.value)}><option>None</option><option>Unfinished</option><option>Finished</option></select></Field>
       <Field label="ZIP"><input value={f.zip} onChange={(e) => set('zip', e.target.value.replace(/\D/g, '').slice(0, 5))} /></Field>
     </div>
-    <div className="estimate-card"><div><strong>Estimated replacement cost</strong><span className="big">{money(estimate)}</span><span>Recommended Coverage A for ErieSecure Home. Guaranteed Replacement Cost pays to rebuild even above this limit when insured to 100% of the estimate.</span></div><Link className="continue-action" to="/quotes/search-results">START HOME QUOTE</Link></div>
+    <div className="estimate-card"><div><strong>Estimated replacement cost</strong><span className="big">{estimate ? money(estimate) : '—'}</span><span>{sqft ? '' : 'Enter the finished square footage. '}Recommended Coverage A for ErieSecure Home. Guaranteed Replacement Cost pays to rebuild even above this limit when insured to 100% of the estimate.</span></div><Link className="continue-action" to="/quotes/search-results">START HOME QUOTE</Link></div>
   </Panel>;
 }
 
 export function BuildingValuation() {
-  const [f, setF] = useState({ occupancy: 'Retail store', sqft: 6000, cls: '3 — Non-combustible', stories: 1, sprinklered: false, year: 1995 });
+  const [f, setF] = useState({ occupancy: 'Retail store', sqft: '6000', cls: '3 — Non-combustible', stories: 1, sprinklered: false, year: 1995 });
   const rate = { '1 — Frame': 165, '2 — Joisted masonry': 178, '3 — Non-combustible': 172, '4 — Masonry non-combustible': 190, '5 — Modified fire resistive': 214, '6 — Fire resistive': 236 }[f.cls] ?? 172;
   const occ = { 'Retail store': 1, Office: 1.08, Restaurant: 1.25, Warehouse: 0.72, 'Light manufacturing': 0.9, 'Medical office': 1.3 }[f.occupancy] ?? 1;
-  const estimate = Math.round((f.sqft * rate * occ * (f.stories > 1 ? 0.95 : 1) * (f.sprinklered ? 1.03 : 1)) / 1000) * 1000;
+  const sqft = numberInput(f.sqft);
+  const estimate = Math.round((sqft * rate * occ * (f.stories > 1 ? 0.95 : 1) * (f.sprinklered ? 1.03 : 1)) / 1000) * 1000;
   return <Panel title="Commercial building valuation">
     <div className="px-grid3">
       <Field label="Occupancy"><select value={f.occupancy} onChange={(e) => setF({ ...f, occupancy: e.target.value })}>{['Retail store', 'Office', 'Restaurant', 'Warehouse', 'Light manufacturing', 'Medical office'].map((o) => <option key={o}>{o}</option>)}</select></Field>
-      <Field label="Total square feet"><input type="number" step={100} value={f.sqft} onChange={(e) => setF({ ...f, sqft: Number(e.target.value) })} /></Field>
+      <Field label="Total square feet"><input type="number" min={0} step={100} value={f.sqft} onChange={(e) => setF({ ...f, sqft: e.target.value.replace(/^-/, '') })} /></Field>
       <Field label="ISO construction class"><select value={f.cls} onChange={(e) => setF({ ...f, cls: e.target.value })}>{['1 — Frame', '2 — Joisted masonry', '3 — Non-combustible', '4 — Masonry non-combustible', '5 — Modified fire resistive', '6 — Fire resistive'].map((o) => <option key={o}>{o}</option>)}</select></Field>
-      <Field label="Stories"><input type="number" min={1} value={f.stories} onChange={(e) => setF({ ...f, stories: Number(e.target.value) })} /></Field>
+      <Field label="Stories"><input type="number" min={1} value={f.stories} onChange={(e) => setF({ ...f, stories: numberInput(e.target.value, 1) })} /></Field>
       <Field label="Year built"><input type="number" value={f.year} onChange={(e) => setF({ ...f, year: Number(e.target.value) })} /></Field>
       <label className="px-checks"><input type="checkbox" checked={f.sprinklered} onChange={(e) => setF({ ...f, sprinklered: e.target.checked })} /> Fully sprinklered</label>
     </div>
-    <div className="estimate-card"><div><strong>Estimated building replacement cost</strong><span className="big">{money(estimate)}</span><span>{money(Math.round(estimate / f.sqft))} per sq. ft. Use as the building limit on ErieSecure Business®.</span></div><Link className="continue-action" to="/products/eriesecure-business">ERIESECURE BUSINESS</Link></div>
+    <div className="estimate-card"><div><strong>Estimated building replacement cost</strong><span className="big">{sqft ? money(estimate) : '—'}</span><span>{sqft ? `${money(Math.round(estimate / sqft))} per sq. ft.` : 'Enter the total square footage.'} Use as the building limit on ErieSecure Business®.</span></div><Link className="continue-action" to="/products/eriesecure-business">ERIESECURE BUSINESS</Link></div>
   </Panel>;
 }
 
@@ -115,7 +118,7 @@ export function FormsWidget() {
   const q = params.get('q') ?? '';
   const rows = formsLibrary.filter((f) => (line === 'All' || f.line === line) && `${f.code} ${f.name} ${f.line}`.toLowerCase().includes(q.toLowerCase()));
   return <Panel title="Forms library">
-    <div className="px-toolbar"><input className="px-search" value={q} onChange={(e) => setParams(e.target.value ? { q: e.target.value } : {})} placeholder="Search by form number or name" aria-label="Search forms" /><select value={line} onChange={(e) => setLine(e.target.value)} aria-label="Line of business">{[...new Set(['All', ...formsLibrary.map((f) => f.line)])].map((l) => <option key={l}>{l}</option>)}</select></div>
+    <div className="px-toolbar"><input className="px-search" value={q} onChange={(e) => setParams(e.target.value ? { q: e.target.value } : {}, { replace: true })} placeholder="Search by form number or name" aria-label="Search forms" /><select value={line} onChange={(e) => setLine(e.target.value)} aria-label="Line of business">{[...new Set(['All', ...formsLibrary.map((f) => f.line)])].map((l) => <option key={l}>{l}</option>)}</select></div>
     {rows.length === 0 ? <Empty>No forms match “{q}”.</Empty> : <table className="px-table"><thead><tr><th>Form</th><th>Name</th><th>Line</th><th>States</th><th /></tr></thead><tbody>{rows.map((f) => <tr key={f.code} className="clickable" onClick={() => setPreview(f)}><td className="mono">{f.code}</td><td>{f.name}</td><td>{f.line}</td><td>{f.states}</td><td><button type="button" className="link-button"><Eye size={13} /> Preview</button></td></tr>)}</tbody></table>}
     {preview && <Modal title={`${preview.code} — ${preview.name}`} wide onClose={() => setPreview(null)} footer={<><select value={recipient} onChange={(e) => setRecipient(e.target.value)} aria-label="Send to customer"><option value="">Send to customer…</option>{customers.map((c) => <option key={c.id}>{fullName(c)}</option>)}</select><button type="button" className="px-btn ghost" disabled={!recipient} onClick={() => { addEnvelope({ customer: recipient, document: `${preview.code} ${preview.name}` }); notify(`${preview.code} sent to ${recipient} for eSignature.`); setPreview(null); }}><Send size={13} /> eSign</button><button type="button" className="px-btn" onClick={() => window.print()}><Printer size={13} /> Print</button></>}>
       <div className="doc-preview printable"><header><span className="quote-erie-mark small">⌂</span><div><strong>{preview.name}</strong><small>Form {preview.code} · Edition 07/2026 · {preview.states === 'All' ? 'All states' : preview.states}</small></div></header>
@@ -139,8 +142,9 @@ export function LmsWidget() {
   const [params, setParams] = useSearchParams();
   const { notify } = usePortal();
   const tracks = { all: 'All courses', onboarding: 'New agent onboarding', personal: 'Personal lines', commercial: 'Commercial lines', ce: 'Continuing education' } as const;
-  const tab = (params.get('tab') ?? 'all') as keyof typeof tracks;
-  const [progress, setProgress] = useState<Record<string, 'enrolled' | 'complete'>>(() => { try { return JSON.parse(localStorage.getItem(LMS_KEY) ?? '{}'); } catch { return {}; } });
+  const requested = params.get('tab') ?? 'all';
+  const tab = (requested in tracks ? requested : 'all') as keyof typeof tracks;
+  const [progress, setProgress] = useState<Record<string, 'enrolled' | 'complete'>>(() => { try { const v: unknown = JSON.parse(localStorage.getItem(LMS_KEY) ?? '{}'); return v && typeof v === 'object' && !Array.isArray(v) ? (v as Record<string, 'enrolled' | 'complete'>) : {}; } catch { return {}; } });
   const save = (next: typeof progress) => { setProgress(next); try { localStorage.setItem(LMS_KEY, JSON.stringify(next)); } catch { /* ignore */ } };
   const credits = courses.filter((c) => progress[c.id] === 'complete').reduce((s, c) => s + c.ce, 0);
   const list = courses.filter((c) => tab === 'all' || c.track === tab);

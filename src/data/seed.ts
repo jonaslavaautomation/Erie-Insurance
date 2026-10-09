@@ -1,5 +1,5 @@
 import type { AutoCoverages, BillingAccount, BoatDetails, Claim, CommercialDetails, Customer, Driver, Envelope, HomeCoverages, Lead, LifeDetails, Policy, Property, Quote, UmbrellaDetails, Vehicle } from '@/data/types';
-import { rateAuto, rateHome } from '@/lib/rating';
+import { payPlanInstallments, rateAuto, rateHome } from '@/lib/rating';
 
 // Sample data for the demo portal. None of these are real ERIE customers.
 export const AGENT = {
@@ -118,7 +118,7 @@ export const defaultLife: LifeDetails = {
 };
 
 const customers: Customer[] = [
-  { id: 'C-100231', firstName: 'David', middleName: '', lastName: 'Guttenberg', address: '509 Erie Insurance Way', city: 'Meadville', state: 'WI', zip: '16335', dob: '1968-07-14', phone: '(814) 555-0187', email: 'd.guttenberg@example.com', customerSince: '2014-03-01' },
+  { id: 'C-100231', firstName: 'David', middleName: '', lastName: 'Guttenberg', address: '509 Erie Insurance Way', city: 'Waunakee', state: 'WI', zip: '53597', dob: '1968-07-14', phone: '(608) 555-0187', email: 'd.guttenberg@example.com', customerSince: '2014-03-01' },
   { id: 'C-100458', firstName: 'Maria', middleName: 'Elena', lastName: 'Johnson', address: '120 Lakeview Drive', city: 'Madison', state: 'WI', zip: '53703', dob: '1984-11-23', phone: '(608) 555-0119', email: 'maria.johnson@example.com', customerSince: '2019-06-15' },
   { id: 'C-100772', firstName: 'Robert', middleName: 'J', lastName: 'Kowalski', address: '88 Mill Pond Road', city: 'Waukesha', state: 'WI', zip: '53186', dob: '1957-02-09', phone: '(262) 555-0163', email: 'rkowalski@example.com', customerSince: '2008-09-10' },
   { id: 'C-101034', firstName: 'Aisha', middleName: '', lastName: 'Thompson', address: '4410 Cherokee Drive', city: 'Fitchburg', state: 'WI', zip: '53711', dob: '1991-05-30', phone: '(608) 555-0134', email: 'aisha.t@example.com', customerSince: '2022-01-20' },
@@ -154,7 +154,7 @@ function baseHistory(seed: PolicySeed): Policy['history'] {
 }
 
 const policies: Policy[] = [
-  autoPolicy({ number: 'A05-2817734', type: 'Auto', customerId: 'C-100231', status: 'Active', effective: '2026-03-01', expiration: '2027-03-01', payPlan: 'Monthly', autoPay: true, agentNumber: 'Agent #10492', description: '2 vehicles · 2 drivers', drivers: [driver('D1', 'David', 'Guttenberg', '1968-07-14'), driver('D2', 'Karen', 'Guttenberg', '1970-04-02', { gender: 'F', relationship: 'Spouse' })], vehicles: [vehicle('V1', 2022, 'Subaru', 'Outback', '4S4BTANC5N3184471', { garagingZip: '16335' }), vehicle('V2', 2019, 'Ford', 'F-150', '1FTEW1E53KFA77210', { garagingZip: '16335', use: 'Pleasure' })], autoCoverages: { ...defaultAutoCoverages, autoPlus: true } }, true),
+  autoPolicy({ number: 'A05-2817734', type: 'Auto', customerId: 'C-100231', status: 'Active', effective: '2026-03-01', expiration: '2027-03-01', payPlan: 'Monthly', autoPay: true, agentNumber: 'Agent #10492', description: '2 vehicles · 2 drivers', drivers: [driver('D1', 'David', 'Guttenberg', '1968-07-14'), driver('D2', 'Karen', 'Guttenberg', '1970-04-02', { gender: 'F', relationship: 'Spouse' })], vehicles: [vehicle('V1', 2022, 'Subaru', 'Outback', '4S4BTANC5N3184471', { garagingZip: '53597' }), vehicle('V2', 2019, 'Ford', 'F-150', '1FTEW1E53KFA77210', { garagingZip: '53597', use: 'Pleasure' })], autoCoverages: { ...defaultAutoCoverages, autoPlus: true } }, true),
   homePolicy({ number: 'H07-1938842', type: 'Home', customerId: 'C-100231', status: 'Active', effective: '2026-03-01', expiration: '2027-03-01', payPlan: 'Annual', autoPay: false, agentNumber: 'Agent #10492', description: 'ErieSecure Home · 509 Erie Insurance Way', drivers: [], vehicles: [], property: { ...defaultProperty, yearBuilt: 1987, squareFeet: 2450 }, homeCoverages: { ...defaultHomeCoverages, dwelling: 385000, waterBackup: true } }, true),
   autoPolicy({ number: 'A05-3302915', type: 'Auto', customerId: 'C-100458', status: 'Active', effective: '2026-06-15', expiration: '2027-06-15', payPlan: 'Quarterly', autoPay: false, agentNumber: 'Agent #20941', description: '1 vehicle · 1 driver', drivers: [driver('D1', 'Maria', 'Johnson', '1984-11-23', { gender: 'F', maritalStatus: 'Single' })], vehicles: [vehicle('V1', 2024, 'Toyota', 'RAV4 Hybrid', '2T3RWRFV4RW210984')], autoCoverages: { ...defaultAutoCoverages, newAutoSecurity: true, emergencyRoadService: true, transportationExpense: true } }, false),
   simplePolicy({ number: 'L22-0045871', type: 'Life', customerId: 'C-100458', status: 'Active', effective: '2023-02-01', expiration: '2043-02-01', payPlan: 'Monthly', autoPay: true, agentNumber: 'Agent #20941', description: 'ERIE Lifetime Term · $500,000 face', drivers: [], vehicles: [], premium: 384 }),
@@ -167,22 +167,38 @@ const policies: Policy[] = [
   simplePolicy({ number: 'Q97-5520193', type: 'Business', customerId: 'C-101533', status: 'Active', effective: '2026-07-01', expiration: '2027-07-01', payPlan: 'Quarterly', autoPay: true, agentNumber: 'Agent #10492', description: 'ErieSecure Business® · Schaefer Floral & Gifts', drivers: [], vehicles: [], premium: 3180 }),
 ];
 
+// Each account: installments paid so far this term, the next due date, and the payment method.
+// Balances and minimums are derived from the policy premium so they always agree with the plan.
+function account(policyNumber: string, paid: number, nextDueDate: string, method: string, firstPayment: string, confirmationSeed: number): BillingAccount {
+  const policy = policies.find((p) => p.number === policyNumber)!;
+  const count = payPlanInstallments[policy.payPlan];
+  const installment = Math.round((policy.premium / count) * 100) / 100;
+  const monthsBetween = 12 / count;
+  const payments = Array.from({ length: paid }, (_, i) => {
+    const d = new Date(`${firstPayment}T12:00:00`);
+    d.setMonth(d.getMonth() + Math.round(i * monthsBetween));
+    return { id: `${policyNumber}-P${i + 1}`, date: d.toISOString().slice(0, 10), amount: i === count - 1 ? Math.round((policy.premium - installment * (count - 1)) * 100) / 100 : installment, method, confirmation: `EP-${confirmationSeed + i * 1371}`, policyNumber };
+  }).reverse();
+  const balance = Math.max(0, Math.round((policy.premium - payments.reduce((t, p) => t + p.amount, 0)) * 100) / 100);
+  return { policyNumber, balance, nextDueDate, minimumDue: balance > 0 ? Math.min(balance, installment) : 0, payments };
+}
+
 const billing: BillingAccount[] = [
-  { policyNumber: 'A05-2817734', balance: 1424, nextDueDate: '2026-10-01', minimumDue: 118.67, payments: [{ id: 'P1', date: '2026-09-01', amount: 118.67, method: 'AutoPay · Checking ••4410', confirmation: 'EP-77310452', policyNumber: 'A05-2817734' }, { id: 'P2', date: '2026-08-01', amount: 118.67, method: 'AutoPay · Checking ••4410', confirmation: 'EP-76021887', policyNumber: 'A05-2817734' }] },
-  { policyNumber: 'H07-1938842', balance: 0, nextDueDate: '2027-02-01', minimumDue: 0, payments: [{ id: 'P3', date: '2026-02-18', amount: 1186, method: 'Visa ••2291', confirmation: 'EP-70119843', policyNumber: 'H07-1938842' }] },
-  { policyNumber: 'A05-3302915', balance: 712, nextDueDate: '2026-12-15', minimumDue: 237.5, payments: [{ id: 'P4', date: '2026-09-15', amount: 240.5, method: 'Checking ••0912', confirmation: 'EP-77904416', policyNumber: 'A05-3302915' }] },
-  { policyNumber: 'L22-0045871', balance: 32, nextDueDate: '2026-11-01', minimumDue: 32, payments: [{ id: 'P5', date: '2026-10-01', amount: 32, method: 'AutoPay · Checking ••7732', confirmation: 'EP-78110223', policyNumber: 'L22-0045871' }] },
-  { policyNumber: 'A05-1120456', balance: 2896, nextDueDate: '2026-09-10', minimumDue: 486.33, payments: [] },
-  { policyNumber: 'H07-0821193', balance: 1105, nextDueDate: '2026-10-10', minimumDue: 138.11, payments: [{ id: 'P6', date: '2026-09-10', amount: 138.11, method: 'AutoPay · Savings ••5508', confirmation: 'EP-77440019', policyNumber: 'H07-0821193' }] },
-  { policyNumber: 'B09-0402218', balance: 0, nextDueDate: '2027-03-01', minimumDue: 0, payments: [{ id: 'P7', date: '2026-03-28', amount: 412, method: 'Mastercard ••8820', confirmation: 'EP-71228940', policyNumber: 'B09-0402218' }] },
-  { policyNumber: 'A05-4471802', balance: 1210, nextDueDate: '2026-10-20', minimumDue: 134.44, payments: [{ id: 'P8', date: '2026-09-20', amount: 134.44, method: 'AutoPay · Checking ••1187', confirmation: 'EP-77612554', policyNumber: 'A05-4471802' }] },
-  { policyNumber: 'H07-2290571', balance: 0, nextDueDate: '2026-10-15', minimumDue: 0, payments: [{ id: 'P9', date: '2025-10-28', amount: 1642, method: 'Checking ••3390', confirmation: 'EP-66509213', policyNumber: 'H07-2290571' }] },
-  { policyNumber: 'U03-0098154', balance: 0, nextDueDate: '2026-10-15', minimumDue: 0, payments: [{ id: 'P10', date: '2025-10-28', amount: 245, method: 'Checking ••3390', confirmation: 'EP-66509214', policyNumber: 'U03-0098154' }] },
-  { policyNumber: 'Q97-5520193', balance: 2385, nextDueDate: '2026-10-01', minimumDue: 795, payments: [{ id: 'P11', date: '2026-07-01', amount: 795, method: 'ERIExpressPay® · Checking ••6621', confirmation: 'EP-74400518', policyNumber: 'Q97-5520193' }] },
+  account('A05-2817734', 8, '2026-11-01', 'AutoPay · Checking ••4410', '2026-03-01', 70110452),
+  account('H07-1938842', 1, '2027-03-01', 'Visa ••2291', '2026-02-18', 70119843),
+  account('A05-3302915', 2, '2026-12-15', 'Checking ••0912', '2026-06-15', 74904416),
+  account('L22-0045871', 9, '2026-11-01', 'AutoPay · Checking ••7732', '2026-02-01', 70810223),
+  account('A05-1120456', 0, '2026-09-10', '', '2026-09-10', 0),
+  account('H07-0821193', 1, '2026-10-10', 'AutoPay · Savings ••5508', '2026-09-10', 77440019),
+  account('B09-0402218', 1, '2027-04-01', 'Mastercard ••8820', '2026-03-28', 71228940),
+  account('A05-4471802', 9, '2026-10-20', 'AutoPay · Checking ••1187', '2026-01-20', 70612554),
+  account('H07-2290571', 1, '2026-11-01', 'Checking ••3390', '2025-10-28', 66509213),
+  account('U03-0098154', 1, '2026-11-01', 'Checking ••3390', '2025-10-28', 66509214),
+  account('Q97-5520193', 2, '2027-01-01', 'ERIExpressPay® · Checking ••6621', '2026-07-01', 74400518),
 ];
 
 const claims: Claim[] = [
-  { number: 'CLM-26-0048213', policyNumber: 'A05-2817734', customerId: 'C-100231', lossDate: '2026-09-18', reportedDate: '2026-09-18', lossType: 'Auto — Collision', location: 'Park Ave & N Main St, Meadville', description: 'Insured was rear-ended at a stoplight. Rear bumper and liftgate damaged. Other driver cited.', status: 'Repair In Progress', adjuster: { name: 'Megan Reilly', phone: '(800) 367-3743 x4471', email: 'megan.reilly@erieinsurance.example' }, reserve: 6400, paid: 1250, deductible: 500, injuries: false, policeReport: 'MPD-26-11873', repairShop: 'Crawford County Collision (Direct Repair Program)', rental: 'Enterprise — Meadville · 30 days max', notes: [{ date: '2026-09-18', author: 'Megan Reilly', text: 'Contacted insured within 2 hours. Photos received through ERIE app.' }, { date: '2026-09-20', author: 'Megan Reilly', text: 'DRP estimate received: $5,880. Subrogation opened against other carrier.' }, { date: '2026-09-24', author: 'Megan Reilly', text: 'Rental issued. Parts ordered — ETA 10/3.' }], payments: [{ date: '2026-09-25', payee: 'Crawford County Collision', amount: 1250, type: 'Partial repair payment' }], attachments: ['scene-photo-1.jpg', 'scene-photo-2.jpg', 'drp-estimate.pdf'] },
+  { number: 'CLM-26-0048213', policyNumber: 'A05-2817734', customerId: 'C-100231', lossDate: '2026-09-18', reportedDate: '2026-09-18', lossType: 'Auto — Collision', location: 'Main St & Century Ave, Waunakee', description: 'Insured was rear-ended at a stoplight. Rear bumper and liftgate damaged. Other driver cited.', status: 'Repair In Progress', adjuster: { name: 'Megan Reilly', phone: '(800) 367-3743 x4471', email: 'megan.reilly@erieinsurance.example' }, reserve: 6400, paid: 1250, deductible: 500, injuries: false, policeReport: 'MPD-26-11873', repairShop: 'Dane County Collision (Direct Repair Program)', rental: 'Enterprise — Waunakee · 30 days max', notes: [{ date: '2026-09-18', author: 'Megan Reilly', text: 'Contacted insured within 2 hours. Photos received through ERIE app.' }, { date: '2026-09-20', author: 'Megan Reilly', text: 'DRP estimate received: $5,880. Subrogation opened against other carrier.' }, { date: '2026-09-24', author: 'Megan Reilly', text: 'Rental issued. Parts ordered — ETA 10/3.' }], payments: [{ date: '2026-09-25', payee: 'Dane County Collision', amount: 1250, type: 'Partial repair payment' }], attachments: ['scene-photo-1.jpg', 'scene-photo-2.jpg', 'drp-estimate.pdf'] },
   { number: 'CLM-26-0041190', policyNumber: 'H07-0821193', customerId: 'C-100772', lossDate: '2026-08-04', reportedDate: '2026-08-05', lossType: 'Home — Wind/Hail', location: '88 Mill Pond Road, Waukesha', description: 'Hail storm damaged roof shingles and gutters on the north side.', status: 'Payment Issued', adjuster: { name: 'Carlos Medina', phone: '(800) 367-3743 x5120', email: 'carlos.medina@erieinsurance.example' }, reserve: 14200, paid: 13200, deductible: 1000, injuries: false, policeReport: '', repairShop: 'Badger State Roofing', rental: '', notes: [{ date: '2026-08-06', author: 'Carlos Medina', text: 'Inspection scheduled for 8/8.' }, { date: '2026-08-08', author: 'Carlos Medina', text: 'Inspection complete. Full roof replacement approved under Guaranteed Replacement Cost.' }, { date: '2026-08-19', author: 'Carlos Medina', text: 'Payment issued to insured and mortgagee.' }], payments: [{ date: '2026-08-19', payee: 'Robert & Janet Kowalski / First Federal Mortgage', amount: 13200, type: 'Dwelling — roof replacement' }], attachments: ['roof-inspection.pdf'] },
   { number: 'CLM-26-0031847', policyNumber: 'A05-4471802', customerId: 'C-101034', lossDate: '2026-05-12', reportedDate: '2026-05-12', lossType: 'Auto — Comprehensive (Glass)', location: 'I-39 near Portage', description: 'Rock chip spread across windshield.', status: 'Closed', adjuster: { name: 'Jordan Pike', phone: '(800) 367-3743 x3318', email: 'jordan.pike@erieinsurance.example' }, reserve: 0, paid: 486, deductible: 250, injuries: false, policeReport: '', repairShop: 'Safelite AutoGlass', rental: '', notes: [{ date: '2026-05-12', author: 'Jordan Pike', text: 'Glass claim routed to network vendor.' }, { date: '2026-05-15', author: 'Jordan Pike', text: 'Windshield replaced. Claim closed.' }], payments: [{ date: '2026-05-15', payee: 'Safelite AutoGlass', amount: 486, type: 'Glass replacement' }], attachments: [] },
   { number: 'CLM-26-0050022', policyNumber: 'H07-2290571', customerId: 'C-101290', lossDate: '2026-09-27', reportedDate: '2026-09-28', lossType: 'Home — Water Damage', location: '17 Willow Bend Court, Middleton', description: 'Washing machine supply line burst; water damage to laundry room flooring and drywall.', status: 'Inspection', adjuster: { name: 'Priya Desai', phone: '(800) 367-3743 x6204', email: 'priya.desai@erieinsurance.example' }, reserve: 8500, paid: 0, deductible: 1000, injuries: false, policeReport: '', repairShop: 'ServiceMaster Restore — Madison (mitigation)', rental: '', notes: [{ date: '2026-09-28', author: 'Priya Desai', text: 'Mitigation vendor dispatched. Drying equipment placed.' }], payments: [], attachments: ['laundry-room.jpg'] },
@@ -234,7 +250,7 @@ const sampleQuote: Quote = {
 
 // The Kowalski auto policy missed its first installment; ERIE has mailed a notice of cancellation.
 const kowalskiAuto = policies.find((p) => p.number === 'A05-1120456')!;
-kowalskiAuto.history = [{ date: '2026-09-25', text: 'Notice of cancellation for non-payment mailed — cancels 2026-10-15 unless $486.33 is received', by: 'System' }, ...kowalskiAuto.history];
+kowalskiAuto.history = [{ date: '2026-09-25', text: `Notice of cancellation for non-payment mailed — cancels 2026-10-15 unless ${billing.find((b) => b.policyNumber === 'A05-1120456')!.minimumDue.toLocaleString('en-US', { style: 'currency', currency: 'USD' })} is received`, by: 'System' }, ...kowalskiAuto.history];
 kowalskiAuto.documents = [{ name: 'Notice of Cancellation — Non-payment', date: '2026-09-25', kind: 'Notice' }, ...kowalskiAuto.documents];
 
 export function createSeed() {

@@ -6,6 +6,7 @@ import QuoteHeader from '@/components/QuoteHeader';
 import { StatusBadge } from '@/components/ui';
 import { fullName, usePortal } from '@/data/store';
 import { STATES } from '@/data/content';
+import { ageOn, isRealDate } from '@/lib/validation';
 import { AGENT } from '@/data/seed';
 import type { Customer, QuoteStatus } from '@/data/types';
 
@@ -42,11 +43,16 @@ function QuoteSearchPage() {
   const [openFilter, setOpenFilter] = useState<keyof Filters | null>(null);
   const [showArchive, setShowArchive] = useState(false);
   const [selected, setSelected] = useState<string[]>([]);
-  const [selectedCustomer, setSelectedCustomer] = useState<string | undefined>();
+  const [selectedCustomer, setSelectedCustomer] = useState<string | undefined>(params.get('customerId') ?? undefined);
   const [errors, setErrors] = useState<string[]>([]);
-  const [form, setForm] = useState<QuoteForm>({ suffix: '', firstName, middleName: params.get('middleName') ?? '', lastName, address: '', city: '', state: 'WI', zip: '', month: '', day: '', year: '' });
+  const dobParam = params.get('dob') ?? '';
+  const [form, setForm] = useState<QuoteForm>({ suffix: '', firstName, middleName: params.get('middleName') ?? '', lastName, address: params.get('address') ?? '', city: params.get('city') ?? '', state: params.get('state') ?? 'WI', zip: params.get('zip') ?? '', month: dobParam.slice(5, 7), day: dobParam.slice(8, 10), year: dobParam.slice(0, 4) });
 
-  const updateForm = (key: keyof QuoteForm, value: string) => { setForm((current) => ({ ...current, [key]: value })); setErrors([]); };
+  const updateForm = (key: keyof QuoteForm, value: string) => {
+    setForm((current) => ({ ...current, [key]: value }));
+    if (key === 'firstName' || key === 'lastName') setSelectedCustomer(undefined);
+    setErrors([]);
+  };
   const terms = query.toLowerCase().replace(/,/g, ' ').split(/\s+/).filter(Boolean);
   const matches = (text: string) => terms.every((term) => text.toLowerCase().includes(term));
 
@@ -77,9 +83,10 @@ function QuoteSearchPage() {
     if (!form.firstName.trim() || !form.lastName.trim()) problems.push('First and last legal name are required.');
     if (!form.address.trim() || !form.city.trim()) problems.push('Street address and city are required.');
     if (!/^\d{5}$/.test(form.zip)) problems.push('ZIP code must be 5 digits.');
-    const dob = new Date(`${form.year}-${form.month.padStart(2, '0')}-${form.day.padStart(2, '0')}T12:00:00`);
-    if (!/^\d{4}$/.test(form.year) || Number.isNaN(dob.getTime()) || dob > new Date()) problems.push('Enter a valid date of birth (MM / DD / YYYY).');
-    else if (new Date().getFullYear() - dob.getFullYear() < 16) problems.push('Applicant must be at least 16 years old.');
+    const [y, m, d] = [Number(form.year), Number(form.month), Number(form.day)];
+    if (!/^\d{4}$/.test(form.year) || !isRealDate(y, m, d) || ageOn(y, m, d) < 0) problems.push('Enter a valid date of birth (MM / DD / YYYY).');
+    else if (ageOn(y, m, d) < 16) problems.push('Applicant must be at least 16 years old.');
+    else if (ageOn(y, m, d) > 110) problems.push('Check the year of birth.');
     setErrors(problems);
     if (problems.length) return;
     const quoteParams = new URLSearchParams({ firstName: form.firstName, middleName: form.middleName, lastName: form.lastName, address: form.address, city: form.city, state: form.state, zip: form.zip, dob: `${form.year}-${form.month.padStart(2, '0')}-${form.day.padStart(2, '0')}` });
@@ -88,9 +95,23 @@ function QuoteSearchPage() {
     navigate(`/quotes/select-products?${quoteParams.toString()}`);
   };
 
+  const visibleSelected = selected.filter((id) => matchingQuotes.some((q) => q.id === id));
+  const archivable = visibleSelected.filter((id) => quotes.find((q) => q.id === id)?.status !== 'Issued');
   const toggleSelected = (id: string) => setSelected((current) => (current.includes(id) ? current.filter((value) => value !== id) : [...current, id]));
-  const archiveSelected = () => { archiveQuotes(selected, !showArchive); notify(`${selected.length} quote${selected.length === 1 ? '' : 's'} ${showArchive ? 'restored' : 'archived'}.`); setSelected([]); };
-  const deleteSelected = () => { if (!window.confirm(`Delete ${selected.length} quote(s)? This cannot be undone.`)) return; deleteQuotes(selected); notify('Quotes deleted.'); setSelected([]); };
+  const archiveSelected = () => {
+    if (!archivable.length) { notify('Issued quotes are part of the policy record and can’t be archived.', 'info'); return; }
+    archiveQuotes(archivable, !showArchive);
+    notify(`${archivable.length} quote${archivable.length === 1 ? '' : 's'} ${showArchive ? 'restored' : 'archived'}.`);
+    setSelected([]);
+  };
+  const deleteSelected = () => {
+    const deletable = visibleSelected.filter((id) => quotes.find((q) => q.id === id)?.status !== 'Issued');
+    if (!deletable.length) { notify('Issued quotes are part of the policy record and can’t be deleted.', 'info'); return; }
+    if (!window.confirm(`Delete ${deletable.length} quote(s)? This cannot be undone.`)) return;
+    deleteQuotes(deletable);
+    notify('Quotes deleted.');
+    setSelected([]);
+  };
   const hasResults = matchingQuotes.length > 0 || matchingCustomers.length > 0;
 
   return <div className="quote-page">
@@ -117,7 +138,7 @@ function QuoteSearchPage() {
           {matchingQuotes.map((quote) => <div className="customer-result quote-row" key={quote.id}><input type="checkbox" checked={selected.includes(quote.id)} onChange={() => toggleSelected(quote.id)} aria-label={`Select quote ${quote.id}`} /><button type="button" className="quote-row-main" onClick={() => navigate(quote.status === 'Issued' ? `/quotes/${quote.id}/issued` : `/quotes/${quote.id}/${quote.lastStep}`)}><span><strong>{quote.applicant.lastName}, {quote.applicant.firstName} · {quote.id}</strong><small>{quote.products.map((p) => p.toUpperCase()).join(' + ') || 'No products'} · Effective {quote.effectiveDate} · Updated {quote.updatedAt.slice(0, 10)}</small></span><StatusBadge status={quote.status} /><span className="result-action">{quote.status === 'Issued' ? 'VIEW' : 'RESUME'}</span></button></div>)}
           {matchingCustomers.map((customer) => <button className={`customer-result ${selectedCustomer === customer.id ? 'chosen' : ''}`} type="button" key={customer.id} onClick={() => selectCustomer(customer)}><span><strong>{customer.lastName}, {customer.firstName}{customer.middleName ? ` ${customer.middleName}` : ''} · Customer account</strong><small>{customer.address}, {customer.city}, {customer.state} {customer.zip}</small></span><span className="result-action">{selectedCustomer === customer.id ? 'SELECTED' : 'USE ACCOUNT'}</span></button>)}
         </div>}</div>
-        <div className="quote-results-footer"><div><button className={selected.length ? 'outline-action' : 'disabled-action'} type="button" disabled={!selected.length} onClick={archiveSelected}>{showArchive ? 'RESTORE' : 'ARCHIVE'}</button><button className={selected.length ? 'outline-action danger' : 'disabled-action'} type="button" disabled={!selected.length} onClick={deleteSelected}>DELETE</button></div><button type="button" className="archive-link" onClick={() => { setShowArchive((v) => !v); setSelected([]); }}><Archive size={14} /> {showArchive ? 'Back to active quotes' : 'View Archive'}</button></div>
+        <div className="quote-results-footer"><div><button className={visibleSelected.length ? 'outline-action' : 'disabled-action'} type="button" disabled={!visibleSelected.length} onClick={archiveSelected}>{showArchive ? 'RESTORE' : 'ARCHIVE'}</button><button className={visibleSelected.length ? 'outline-action danger' : 'disabled-action'} type="button" disabled={!visibleSelected.length} onClick={deleteSelected}>DELETE</button></div><button type="button" className="archive-link" onClick={() => { setShowArchive((v) => !v); setSelected([]); }}><Archive size={14} /> {showArchive ? 'Back to active quotes' : 'View Archive'}</button></div>
       </section>
     </main>
   </div>;

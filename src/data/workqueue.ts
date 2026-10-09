@@ -6,7 +6,7 @@ export type WorkItem = { id: string; kind: WorkKind; priority: 'high' | 'normal'
 
 const DISMISS_KEY = 'erie-agentexchange-dismissed-work';
 const SYNC_EVENT = 'erie-work-dismissed';
-const loadDismissed = (): string[] => { try { return JSON.parse(localStorage.getItem(DISMISS_KEY) ?? '[]'); } catch { return []; } };
+const loadDismissed = (): string[] => { try { const v: unknown = JSON.parse(localStorage.getItem(DISMISS_KEY) ?? '[]'); return Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string') : []; } catch { return []; } };
 
 // Derives the agency's to-do list from current portal data, the way a carrier activity center does.
 export function useWorkItems() {
