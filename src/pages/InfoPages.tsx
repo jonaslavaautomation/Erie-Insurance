@@ -46,8 +46,8 @@ export function ProductGuidePage() {
   const [reqError, setReqError] = useState('');
   useEffect(() => { if (location.hash) document.getElementById(location.hash.slice(1))?.scrollIntoView({ behavior: 'smooth' }); }, [location.hash]);
   if (!product) return <NotFoundPage />;
-  // ErieSecure Business and BOP quote in real time; other commercial lines go to underwriting as a request.
-  const quoteLink = product.quoteProduct ? `/quotes/search-results${product.quoteProduct === 'life' ? '?product=life' : ''}` : product.slug === 'eriesecure-business' || product.slug === 'bop' ? '/commercial/quote' : null;
+  // Rated commercial lines start the commercial intake; other commercial products go to underwriting as a request.
+  const quoteLink = product.quoteProduct === 'commercial' || product.slug === 'eriesecure-business' ? '/commercial/quote' : product.quoteProduct ? `/quotes/search-results${product.quoteProduct === 'auto' || product.quoteProduct === 'home' ? '' : `?product=${product.quoteProduct}`}` : null;
   const siblings = productGuides.filter((p) => p.line === product.line && p.slug !== product.slug);
   const submitRequest = () => {
     if (!req.business || !req.owner || !/^\d{5}$/.test(req.zip)) return setReqError('Business name, owner and a 5-digit ZIP are required.');

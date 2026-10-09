@@ -105,7 +105,7 @@ export function ClaimReportPage() {
         <Field label="Involved vehicle" required><select value={form.vehicleId} onChange={(e) => set('vehicleId', e.target.value)}><option value="">-- Select --</option>{policy?.vehicles.map((v) => <option key={v.id} value={v.id}>{v.year} {v.make} {v.model}</option>)}</select></Field>
         <Field label="Repair shop"><select value={form.repairShop} onChange={(e) => set('repairShop', e.target.value)}>{DRP_SHOPS.map((s) => <option key={s}>{s}</option>)}</select></Field>
         <label className="px-checks"><input type="checkbox" checked={form.drivable} onChange={(e) => set('drivable', e.target.checked)} /> Vehicle is drivable</label>
-        <label className="px-checks"><input type="checkbox" checked={form.rental} onChange={(e) => set('rental', e.target.checked)} /> Customer needs a rental{policy?.autoCoverages?.roadsideRentals ? ' (Roadside & Rentals on policy)' : ' (verify transportation expense coverage)'}</label>
+        <label className="px-checks"><input type="checkbox" checked={form.rental} onChange={(e) => set('rental', e.target.checked)} /> Customer needs a rental{policy?.autoCoverages?.transportationExpense ? ' (transportation expenses on policy)' : ' (verify transportation expense coverage)'}</label>
         <div className="px-note span2"><Car size={14} /> Direct Repair Program shops estimate, share with ERIE and start repairs once approved — the fastest path for most collision claims.</div>
       </div> : <div className="px-grid2">
         <label className="px-checks span2"><input type="checkbox" checked={form.mitigation} onChange={(e) => set('mitigation', e.target.checked)} /> Request emergency mitigation (water extraction, board-up, tarping)</label>

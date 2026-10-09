@@ -1,18 +1,20 @@
 import { ReactNode, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
-import { AlertTriangle, Car, Check, CheckCircle2, FileText, Heart, Home, Mail, Pencil, Plus, Printer, Sailboat, Save, ShieldCheck, Trash2, UserPlus, Wand2 } from 'lucide-react';
+import { AlertTriangle, Building2, Car, Check, CheckCircle2, FileText, Heart, Home, Mail, Pencil, Plus, Printer, Sailboat, Save, ShieldCheck, Trash2, Umbrella, UserPlus, Wand2 } from 'lucide-react';
 import '@/product-page.css';
 import QuoteHeader from '@/components/QuoteHeader';
 import { Field, Modal, StatusBadge } from '@/components/ui';
-import { fullName, premiumTotal, quotePremiums, today, usePortal } from '@/data/store';
+import { fullName, lineOf, rateQuote, today, usePortal } from '@/data/store';
+import { businessClasses, contractorTrades } from '@/data/commercial';
+import { CommercialStep, umbrellaUnderlying, UmbrellaStep } from '@/pages/QuoteSteps';
 import { AGENT } from '@/data/seed';
 import { STATES } from '@/data/content';
-import { ageFrom, bmi, installmentSchedule, money, ratedLifeClass } from '@/lib/rating';
+import { ageFrom, BI_OPTIONS, bmi, ErieQuoteResult, installmentSchedule, money, PAY_PLANS, payPlanLabel, PD_OPTIONS, ratedLifeClass, UM_OPTIONS } from '@/lib/rating';
 import { loadTemplates, saveTemplates } from '@/lib/templates';
-import type { Driver, PayPlan, PremiumBreakdown, ProductKey, Quote, Vehicle } from '@/data/types';
+import type { Driver, Policy, PremiumBreakdown, ProductKey, Quote, Vehicle } from '@/data/types';
 
-type StepKey = 'underwriting' | 'drivers' | 'vehicles' | 'property' | 'boat' | 'life' | 'coverages' | 'summary' | 'application' | 'issued';
-const stepLabels: Record<StepKey, string> = { underwriting: 'Underwriting', drivers: 'Drivers', vehicles: 'Vehicles', property: 'Property', boat: 'Boat', life: 'Life', coverages: 'Coverages', summary: 'Quote Summary', application: 'Application & Bind', issued: 'Issued' };
+type StepKey = 'underwriting' | 'drivers' | 'vehicles' | 'property' | 'coverages' | 'umbrella' | 'boat' | 'life' | 'commercial' | 'summary' | 'application' | 'issued';
+const stepLabels: Record<StepKey, string> = { underwriting: 'Customer Profile & Risk', drivers: 'Auto · Drivers', vehicles: 'Auto · Vehicles', property: 'Home · Property', coverages: 'Auto & Home Coverages', umbrella: 'Umbrella', boat: 'Boat', life: 'Life', commercial: 'Commercial Lines', summary: 'Summary & Bundle', application: 'Binder & Issue', issued: 'Issued' };
 
 type UwQuestion = { id: string; text: string; products: ProductKey[] | 'all'; outcome: 'refer' | 'decline' };
 const UW_QUESTIONS: UwQuestion[] = [
@@ -30,6 +32,11 @@ const UW_QUESTIONS: UwQuestion[] = [
   { id: 'vacant', text: 'Is the dwelling vacant, under major renovation, or in foreclosure?', products: ['home'], outcome: 'decline' },
   { id: 'woodstove', text: 'Is a wood stove or space heater the primary source of heat?', products: ['home'], outcome: 'refer' },
   { id: 'boat-size', text: 'Is the boat longer than 26 feet or powered by more than 300 HP?', products: ['boat'], outcome: 'refer' },
+  { id: 'umb-board', text: 'Does any household member serve on a board of directors, hold public office, or have a high public profile?', products: ['umbrella'], outcome: 'refer' },
+  { id: 'umb-aircraft', text: 'Does any household member own or operate an aircraft?', products: ['umbrella'], outcome: 'decline' },
+  { id: 'comm-losses', text: 'Has the business had any property or liability losses over $10,000 in the past 3 years?', products: ['commercial'], outcome: 'refer' },
+  { id: 'comm-hazmat', text: 'Do operations involve hazardous materials, explosives, or work above three stories?', products: ['commercial'], outcome: 'decline' },
+  { id: 'comm-cois', text: 'Are subcontractors used without obtaining certificates of insurance?', products: ['commercial'], outcome: 'refer' },
   { id: 'life-health', text: 'In the past 5 years has the proposed insured been diagnosed with or treated for cancer, heart disease or stroke?', products: ['life'], outcome: 'refer' },
 ];
 
@@ -51,6 +58,19 @@ function productReferrals(quote: Quote): { outcome: 'refer' | 'decline'; text: s
     if (age < 18 || age > 65) out.push({ outcome: 'decline', text: `ERIExpress Life is available for ages 18–65 (applicant is ${age}). Consider fully underwritten Term Life.` });
     if (bmi(quote.life.heightIn, quote.life.weightLb) >= 40) out.push({ outcome: 'refer', text: 'Build (BMI 40+) requires life underwriter review.' });
   }
+  if (quote.products.includes('umbrella') && quote.umbrella.youthfulOperators > 2) out.push({ outcome: 'refer', text: 'More than two youthful operators on an umbrella requires underwriter review.' });
+  if (quote.products.includes('commercial')) {
+    const c = quote.commercial;
+    const cls = businessClasses.find((x) => x.code === c.business.classCode);
+    if (c.lines.includes('bop') && cls?.appetite === 'no') out.push({ outcome: 'decline', text: `${cls.label} is outside Ultrapack Plus appetite.` });
+    if (c.lines.includes('bop') && cls?.appetite === 'refer') out.push({ outcome: 'refer', text: `${cls.label}: ${cls.note}` });
+    const trade = contractorTrades.find((t) => t.code === c.contractors.trade);
+    if (c.lines.includes('contractors') && trade?.appetite === 'no') out.push({ outcome: 'decline', text: `${trade.label} is outside Fivestar Contractors appetite.` });
+    if (c.lines.includes('contractors') && (trade?.appetite === 'refer' || c.contractors.subcontractedPct > 50)) out.push({ outcome: 'refer', text: 'Contractors risk refers to commercial underwriting (trade class or more than 50% subcontracted).' });
+    if (c.lines.includes('commercialAuto') && c.commercialAuto.vehicles.some((v) => v.bodyType === 'Heavy Truck' && v.radius === 'Long Haul (200+ mi)')) out.push({ outcome: 'decline', text: 'Long-haul heavy trucking is outside Commercial Auto appetite.' });
+    if (c.lines.includes('commercialAuto') && c.commercialAuto.drivers.some((d) => d.violations + d.accidents >= 3)) out.push({ outcome: 'refer', text: 'A commercial driver has 3+ incidents — MVR review by underwriting.' });
+    if (c.lines.includes('workersComp') && c.workersComp.experienceMod > 1.25) out.push({ outcome: 'refer', text: `E-Mod ${c.workersComp.experienceMod.toFixed(2)} exceeds 1.25 — workers’ compensation refers to underwriting.` });
+  }
   return out;
 }
 
@@ -58,9 +78,12 @@ function stepsFor(quote: Quote): StepKey[] {
   const steps: StepKey[] = ['underwriting'];
   if (quote.products.includes('auto')) steps.push('drivers', 'vehicles');
   if (quote.products.includes('home')) steps.push('property');
+  if (quote.products.includes('auto') || quote.products.includes('home')) steps.push('coverages');
+  if (quote.products.includes('umbrella')) steps.push('umbrella');
   if (quote.products.includes('boat')) steps.push('boat');
   if (quote.products.includes('life')) steps.push('life');
-  steps.push('coverages', 'summary', 'application', 'issued');
+  if (quote.products.includes('commercial')) steps.push('commercial');
+  steps.push('summary', 'application', 'issued');
   return steps;
 }
 
@@ -114,9 +137,11 @@ export default function QuoteWizard() {
     }
   }, [step, draft]);
 
-  const premiums = useMemo(() => (draft ? quotePremiums(draft) : { auto: null, home: null, boat: null, life: null }), [draft]);
+  const customerPolicies = useMemo(() => (draft?.customerId ? policies.filter((p) => p.customerId === draft.customerId) : []), [policies, draft?.customerId]);
+  const rated = useMemo(() => (draft ? rateQuote(draft, customerPolicies) : null), [draft, customerPolicies]);
+  const premiums = { auto: rated && lineOf(rated, 'auto'), home: rated && lineOf(rated, 'home'), boat: rated && lineOf(rated, 'boat'), life: rated && lineOf(rated, 'life') };
 
-  if (!draft) return <div className="product-page"><QuoteHeader /><main className="product-main"><section className="product-card wizard-card"><h1>Quote not found</h1><p>This quote may have been deleted.</p><Link className="continue-action inline" to="/quotes">View all quotes</Link></section></main></div>;
+  if (!draft || !rated) return <div className="product-page"><QuoteHeader /><main className="product-main"><section className="product-card wizard-card"><h1>Quote not found</h1><p>This quote may have been deleted.</p><Link className="continue-action inline" to="/quotes">View all quotes</Link></section></main></div>;
 
   const steps = stepsFor(draft);
   const currentStep = (steps.includes(step as StepKey) ? step : 'underwriting') as StepKey;
@@ -124,7 +149,7 @@ export default function QuoteWizard() {
   const visitedIndex = Math.max(steps.indexOf(draft.lastStep as StepKey), index);
   const update = (patch: Partial<Quote>) => setDraft((current) => (current ? { ...current, ...patch } : current));
   const outcome = uwOutcome(draft);
-  const total = premiumTotal(premiums);
+  const total = rated.total;
 
   const validate = (target: StepKey): string[] => {
     const problems: string[] = [];
@@ -142,6 +167,22 @@ export default function QuoteWizard() {
     if (target === 'vehicles') {
       if (!draft.vehicles.length) problems.push('Add at least one vehicle.');
       draft.vehicles.forEach((v) => { if (v.vin.length !== 17) problems.push(`VIN for ${v.year} ${v.make} ${v.model || ''} must be 17 characters.`); if (!v.model) problems.push(`Model is required for the ${v.year} ${v.make}.`); });
+    }
+    if (target === 'umbrella') {
+      const check = umbrellaUnderlying(draft, customerPolicies);
+      if (!check.autoOk) problems.push(`Umbrella underlying auto limits not met — ${check.autoText}. Required: 250/500/100 or 500 CSL.`);
+      if (!check.homeOk) problems.push(`Umbrella underlying home liability not met — ${check.homeText}. Required: $300,000.`);
+    }
+    if (target === 'commercial') {
+      const c = draft.commercial;
+      if (!c.business.businessName.trim()) problems.push('Enter the legal business name.');
+      if (!c.business.address.trim() || !/^\d{5}$/.test(c.business.zip)) problems.push('Enter the business location with a 5-digit ZIP.');
+      if (!c.lines.length) problems.push('Select at least one commercial line.');
+      if (c.lines.includes('bop') && !c.business.classCode) problems.push('Ultrapack Plus: select a business class.');
+      if (c.lines.includes('contractors') && !c.contractors.trade) problems.push('Fivestar Contractors: select the trade.');
+      if (c.lines.includes('commercialAuto') && (!c.commercialAuto.vehicles.length || !c.commercialAuto.drivers.length)) problems.push('Commercial Auto: add at least one vehicle and one driver.');
+      if (c.lines.includes('commercialAuto') && c.commercialAuto.drivers.some((d) => !d.name.trim())) problems.push('Commercial Auto: every driver needs a name for the MVR order.');
+      if (c.lines.includes('workersComp') && !c.workersComp.classes.some((x) => x.payroll > 0)) problems.push('Workers’ Comp: add at least one class code with payroll.');
     }
     if (target === 'boat') {
       const b = draft.boat;
@@ -218,15 +259,18 @@ export default function QuoteWizard() {
     drivers: <DriversStep quote={draft} update={update} />,
     vehicles: <VehiclesStep quote={draft} update={update} />,
     property: <PropertyStep quote={draft} update={update} />,
+    umbrella: <UmbrellaStep quote={draft} update={update} existing={customerPolicies} rated={rated} />,
+    commercial: <CommercialStep quote={draft} update={update} rated={rated} />,
     boat: <BoatStep quote={draft} update={update} breakdown={premiums.boat} />,
     life: <LifeStep quote={draft} update={update} breakdown={premiums.life} />,
     coverages: <CoveragesStep quote={draft} update={update} />,
-    summary: <SummaryStep quote={draft} update={update} premiums={premiums} total={total} />,
+    summary: <SummaryStep quote={draft} update={update} rated={rated} existing={customerPolicies} />,
     application: <ApplicationStep quote={draft} update={update} total={total} />,
     issued: <IssuedStep quote={draft} />,
   };
 
-  const existingPolicies = draft.customerId ? policies.filter((p) => p.customerId === draft.customerId) : [];
+  const existingPolicies = customerPolicies;
+  const bundleSavings = -rated.bundleCredits.reduce((s, c) => s + c.amount, 0);
 
   return <div className="product-page">
     <QuoteHeader />
@@ -246,8 +290,8 @@ export default function QuoteWizard() {
           {errors.length > 0 && <ul className="quote-errors" role="alert">{errors.map((error) => <li key={error}>{error}</li>)}</ul>}
         </section>
         {currentStep !== 'issued' && <aside className="wizard-aside">
-          <div className="product-card aside-card"><h3>Applicant</h3><strong>{fullName(draft.applicant)}</strong><span>{draft.applicant.address}</span><span>{draft.applicant.city}, {draft.applicant.state} {draft.applicant.zip}</span><span>DOB {draft.applicant.dob} · Age {ageFrom(draft.applicant.dob)}</span>{existingPolicies.length > 0 && <Link to={`/customers/${draft.customerId}`}>Existing customer · {existingPolicies.length} policies</Link>}</div>
-          <div className="product-card aside-card premium-card"><h3>Estimated annual premium</h3><div className="premium-total">{money(total)}</div>{premiums.auto && <div className="premium-row"><span><Car size={13} /> Auto</span><span>{draft.vehicles.length ? money(premiums.auto.total) : '—'}</span></div>}{premiums.home && <div className="premium-row"><span><Home size={13} /> Home</span><span>{money(premiums.home.total)}</span></div>}{premiums.boat && <div className="premium-row"><span><Sailboat size={13} /> Boat</span><span>{money(premiums.boat.total)}</span></div>}{premiums.life && <div className="premium-row"><span><Heart size={13} /> ERIExpress Life</span><span>{money(premiums.life.total)}</span></div>}<small>Illustrative rating — final premium determined at issue.</small></div>
+          <div className="product-card aside-card"><h3>Applicant</h3><strong>{fullName(draft.applicant)}</strong><span>{draft.applicant.address}</span><span>{draft.applicant.city}, {draft.applicant.state} {draft.applicant.zip}</span>{draft.applicant.dob && <span>DOB {draft.applicant.dob} · Age {ageFrom(draft.applicant.dob)}</span>}{draft.products.includes('commercial') && draft.commercial.business.businessName && <span>Business: {draft.commercial.business.businessName}</span>}{existingPolicies.length > 0 && <Link to={`/customers/${draft.customerId}`}>Existing customer · {existingPolicies.length} policies</Link>}</div>
+          <div className="product-card aside-card premium-card"><h3>Estimated annual premium</h3><div className="premium-total">{money(total)}</div><small className="per-month">≈ {money(rated.schedule.perPayment, true)} × {rated.schedule.count} ({payPlanLabel[draft.payPlan]})</small>{rated.lines.map((l) => <div className="premium-row" key={l.key}><span>{lineIcon(l.key)} {l.breakdown.name ?? l.breakdown.product}</span><span>{l.breakdown.total ? money(l.breakdown.total) : '—'}</span></div>)}{rated.taxes.map((t) => <div className="premium-row tax" key={t.label}><span>Taxes &amp; fees</span><span>{money(t.amount)}</span></div>)}{bundleSavings > 0 && <div className="bundle-savings">Multi-policy savings: {money(bundleSavings)}</div>}<small>Illustrative rating — final premium determined at issue.</small></div>
           <button type="button" className="outline-action wide" onClick={() => { saveQuote(draft); notify(`Quote ${draft.id} saved.`); }}><Save size={13} /> SAVE QUOTE</button>
         </aside>}
       </div>
@@ -255,6 +299,15 @@ export default function QuoteWizard() {
       {currentStep !== 'issued' && <div className="product-actions"><button className="outline-action" type="button" onClick={() => { saveQuote(draft); navigate('/quotes'); }}>SAVE &amp; EXIT</button><div><button className="outline-action" type="button" onClick={() => (index === 0 ? navigate(`/quotes/select-products?${new URLSearchParams({ ...draft.applicant, ...(draft.customerId ? { customerId: draft.customerId } : {}) }).toString()}`) : goTo(steps[index - 1]))}>PREVIOUS</button>{currentStep === 'application' ? <button className="continue-action" type="button" onClick={bind}>BIND &amp; ISSUE</button> : <button className="continue-action" type="button" onClick={next}>CONTINUE</button>}</div></div>}
     </main>
   </div>;
+}
+
+function lineIcon(key: string) {
+  if (key === 'auto') return <Car size={13} />;
+  if (key === 'home') return <Home size={13} />;
+  if (key === 'umbrella') return <Umbrella size={13} />;
+  if (key === 'boat') return <Sailboat size={13} />;
+  if (key === 'life') return <Heart size={13} />;
+  return <Building2 size={13} />;
 }
 
 function YesNo({ value, onChange, name }: { value: string; onChange: (value: 'yes' | 'no') => void; name: string }) {
@@ -399,33 +452,37 @@ function CoveragesStep({ quote, update }: { quote: Quote; update: (patch: Partia
     <div className="wizard-actions-row"><select aria-label="Apply a template" value="" onChange={(e) => { const t = templates.find((x) => x.id === e.target.value); if (t) { update({ autoCoverages: t.autoCoverages, homeCoverages: { ...t.homeCoverages, dwelling: h.dwelling } }); notify(`Applied template “${t.name}”.`, 'info'); } }}><option value="">{templates.length ? 'Apply a template…' : 'No saved templates'}</option>{templates.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}</select><button type="button" className="outline-action" onClick={saveAsTemplate}><Save size={13} /> SAVE AS TEMPLATE</button></div>
     {quote.products.includes('auto') && <div className="coverage-group"><h2><Car size={16} /> Auto coverages</h2>
       <div className="px-grid3">
-        <Field label="Bodily injury liability"><select value={a.bodilyInjury} onChange={(e) => setA('bodilyInjury', e.target.value)}>{['25/50', '50/100', '100/300', '250/500', '500/500'].map((o) => <option key={o} value={o}>${o.replace('/', 'K/$')}K</option>)}</select></Field>
-        <Field label="Property damage liability"><select value={a.propertyDamage} onChange={(e) => setA('propertyDamage', e.target.value)}>{['25,000', '50,000', '100,000', '250,000'].map((o) => <option key={o} value={o}>${o}</option>)}</select></Field>
-        <Field label="Uninsured / underinsured motorists"><select value={a.uninsuredMotorist} onChange={(e) => setA('uninsuredMotorist', e.target.value)}>{['25/50', '50/100', '100/300', '250/500'].map((o) => <option key={o} value={o}>${o.replace('/', 'K/$')}K</option>)}</select></Field>
+        <Field label="Bodily injury liability" hint={quote.products.includes('umbrella') && !['250/500', '500/500', '500 CSL'].includes(a.bodilyInjury) ? 'Umbrella requires 250/500 or 500 CSL' : undefined}><select value={a.bodilyInjury} onChange={(e) => setA('bodilyInjury', e.target.value)}>{BI_OPTIONS.map((o) => <option key={o} value={o}>{(o.includes('CSL') ? `$${o.replace(' CSL', '')}K CSL` : `$${o.replace('/', 'K/$')}K`)}</option>)}</select></Field>
+        <Field label="Property damage liability"><select value={a.propertyDamage} onChange={(e) => setA('propertyDamage', e.target.value)}>{PD_OPTIONS.map((o) => <option key={o} value={o}>${o}</option>)}</select></Field>
+        <Field label="Uninsured / underinsured motorists"><select value={a.uninsuredMotorist} onChange={(e) => setA('uninsuredMotorist', e.target.value)}>{UM_OPTIONS.map((o) => <option key={o} value={o}>{(o.includes('CSL') ? `$${o.replace(' CSL', '')}K CSL` : `$${o.replace('/', 'K/$')}K`)}</option>)}</select></Field>
         <Field label="Medical payments / first party benefits"><select value={a.medicalPayments} onChange={(e) => setA('medicalPayments', e.target.value)}>{['None', '1,000', '5,000', '10,000'].map((o) => <option key={o} value={o}>{o === 'None' ? 'None' : `$${o}`}</option>)}</select></Field>
         <Field label="Comprehensive deductible"><select value={a.comprehensiveDeductible} onChange={(e) => setA('comprehensiveDeductible', Number(e.target.value))}>{[0, 100, 250, 500, 1000].map((o) => <option key={o} value={o}>{o === 0 ? 'Full glass / $0' : `$${o}`}</option>)}</select></Field>
-        <Field label="Collision deductible"><select value={a.collisionDeductible} onChange={(e) => setA('collisionDeductible', Number(e.target.value))}>{[250, 500, 1000, 2000].map((o) => <option key={o} value={o}>${o.toLocaleString()}</option>)}</select></Field>
+        <Field label="Collision deductible"><select value={a.collisionDeductible} onChange={(e) => setA('collisionDeductible', Number(e.target.value))}>{[100, 250, 500, 1000].map((o) => <option key={o} value={o}>${o.toLocaleString()}</option>)}</select></Field>
       </div>
       <div className="endorsements">
         <Endorsement checked={a.rateLock} onChange={(v) => setA('rateLock', v)} title="ERIE Rate Lock®" price="Included">Premium changes only when a driver, vehicle or address changes — even after a claim.</Endorsement>
         <Endorsement checked={a.autoPlus} onChange={(v) => setA('autoPlus', v)} title="ERIE Auto Plus® endorsement" price="+$30/yr">Diminishing deductible ($100 off per claim-free year, up to $500), higher limits on extras, $10,000 death benefit.</Endorsement>
-        <Endorsement checked={a.roadsideRentals} onChange={(v) => setA('roadsideRentals', v)} title="Roadside & Rentals" price={`+${money(34 * Math.max(1, quote.vehicles.length))}/yr`}>Transportation expense after a covered loss plus roadside service (towing, jump-starts, lockouts).</Endorsement>
+        <Endorsement checked={a.emergencyRoadService} onChange={(v) => setA('emergencyRoadService', v)} title="Emergency road service" price={`+${money(14 * Math.max(1, quote.vehicles.length))}/yr`}>Towing, jump-starts, flat tires, lockouts and fuel delivery.</Endorsement>
+        <Endorsement checked={a.transportationExpense} onChange={(v) => setA('transportationExpense', v)} title="Transportation expenses" price={`+${money(22 * Math.max(1, quote.vehicles.length))}/yr`}>Rental car or ride costs while the vehicle is out of service after a covered loss.</Endorsement>
         <Endorsement checked={a.newAutoSecurity} onChange={(v) => setA('newAutoSecurity', v)} title="New Auto Security" price="+$42/vehicle">Replace a totaled vehicle up to two model years old with a brand-new one — no depreciation.</Endorsement>
       </div>
     </div>}
     {quote.products.includes('home') && <div className="coverage-group"><h2><Home size={16} /> ErieSecure Home® coverages</h2>
       <div className="px-grid3">
-        <Field label="Coverage A — Dwelling" hint="Guaranteed Replacement Cost applies"><input type="number" step={5000} value={h.dwelling} onChange={(e) => setH('dwelling', Number(e.target.value))} /></Field>
-        <Field label="Personal liability"><select value={h.personalLiability} onChange={(e) => setH('personalLiability', Number(e.target.value))}>{[100000, 300000, 500000, 1000000].map((o) => <option key={o} value={o}>{money(o)}</option>)}</select></Field>
-        <Field label="Medical payments to others"><select value={h.medicalPayments} onChange={(e) => setH('medicalPayments', Number(e.target.value))}>{[1000, 5000, 10000].map((o) => <option key={o} value={o}>{money(o)}</option>)}</select></Field>
+        <Field label="A — Dwelling" hint="Guaranteed Replacement Cost applies"><input type="number" step={5000} value={h.dwelling} onChange={(e) => setH('dwelling', Number(e.target.value))} /></Field>
+        <Field label="B — Other structures (% of A)"><select value={h.otherStructuresPct} onChange={(e) => setH('otherStructuresPct', Number(e.target.value))}>{[10, 15, 20].map((o) => <option key={o} value={o}>{o}% · {money(h.dwelling * o / 100)}</option>)}</select></Field>
+        <Field label="C — Personal property (% of A)"><select value={h.personalPropertyPct} onChange={(e) => setH('personalPropertyPct', Number(e.target.value))}>{[50, 60, 70].map((o) => <option key={o} value={o}>{o}% · {money(h.dwelling * o / 100)}</option>)}</select></Field>
+        <Field label="D — Loss of use (% of A)"><select value={h.lossOfUsePct} onChange={(e) => setH('lossOfUsePct', Number(e.target.value))}>{[20, 30].map((o) => <option key={o} value={o}>{o}% · {money(h.dwelling * o / 100)}</option>)}</select></Field>
+        <Field label="E — Personal liability" hint={quote.products.includes('umbrella') && h.personalLiability < 300000 ? 'Umbrella requires $300,000' : undefined}><select value={h.personalLiability} onChange={(e) => setH('personalLiability', Number(e.target.value))}>{[100000, 300000, 500000, 1000000].map((o) => <option key={o} value={o}>{money(o)}</option>)}</select></Field>
+        <Field label="F — Medical payments to others"><select value={h.medicalPayments} onChange={(e) => setH('medicalPayments', Number(e.target.value))}>{[1000, 2000, 5000].map((o) => <option key={o} value={o}>{money(o)}</option>)}</select></Field>
         <Field label="All-peril deductible"><select value={h.deductible} onChange={(e) => setH('deductible', Number(e.target.value))}>{[500, 1000, 2500, 5000].map((o) => <option key={o} value={o}>{money(o)}</option>)}</select></Field>
         <Field label="Scheduled valuables (total)"><input type="number" step={1000} value={h.scheduledValuables} onChange={(e) => setH('scheduledValuables', Number(e.target.value))} /></Field>
       </div>
       <div className="endorsements">
-        <Endorsement checked={h.waterBackup} onChange={(v) => setH('waterBackup', v)} title="Sewer or drain backup / sump overflow" price="+$65/yr">Water that backs up through sewers, drains or overflows from a sump pump.</Endorsement>
+        <Endorsement checked={h.waterBackup} onChange={(v) => setH('waterBackup', v)} title="Water backup & sump discharge" price="+$65/yr">Water that backs up through sewers, drains or overflows from a sump pump.</Endorsement>
         <Endorsement checked={h.identityRecovery} onChange={(v) => setH('identityRecovery', v)} title="Identity recovery" price="+$25/yr">Expenses and case management to restore a stolen identity.</Endorsement>
         <Endorsement checked={h.equipmentBreakdown} onChange={(v) => setH('equipmentBreakdown', v)} title="Equipment breakdown" price="+$30/yr">Mechanical or electrical breakdown of HVAC, appliances and home systems.</Endorsement>
-        <Endorsement checked={h.serviceLine} onChange={(v) => setH('serviceLine', v)} title="Service line" price="+$22/yr">Underground water, sewer, power and data lines on the property.</Endorsement>
+        <Endorsement checked={h.serviceLine} onChange={(v) => setH('serviceLine', v)} title="Service line (underground utility lines)" price="+$22/yr">Underground water, sewer, power and data lines on the property.</Endorsement>
         <Endorsement checked={h.homeSharing} onChange={(v) => setH('homeSharing', v)} title="Home-sharing host" price="+$55/yr">Coverage while renting part of the home through home-sharing platforms.</Endorsement>
       </div>
     </div>}
@@ -502,24 +559,27 @@ function LifeStep({ quote, update, breakdown }: { quote: Quote; update: (patch: 
 }
 
 function BreakdownTable({ breakdown }: { breakdown: PremiumBreakdown }) {
-  return <table className="px-table breakdown"><tbody>{breakdown.lines.map((line) => <tr key={line.label}><td>{line.label}</td><td className="num">{money(line.amount)}</td></tr>)}{breakdown.discounts.map((line) => <tr key={line.label} className="discount"><td>{line.label}</td><td className="num">−{money(-line.amount)}</td></tr>)}<tr className="total"><td>{breakdown.product} annual premium</td><td className="num">{money(breakdown.total)}</td></tr></tbody></table>;
+  return <table className="px-table breakdown"><tbody>{breakdown.lines.map((line) => <tr key={line.label}><td>{line.label}</td><td className="num">{money(line.amount)}</td></tr>)}{breakdown.discounts.map((line) => <tr key={line.label} className="discount"><td>{line.label}</td><td className="num">−{money(-line.amount)}</td></tr>)}<tr className="total"><td>{breakdown.name ?? breakdown.product} annual premium</td><td className="num">{money(breakdown.total)}</td></tr></tbody></table>;
 }
 
-function SummaryStep({ quote, update, premiums, total }: { quote: Quote; update: (patch: Partial<Quote>) => void; premiums: ReturnType<typeof quotePremiums>; total: number }) {
+function SummaryStep({ quote, update, rated, existing }: { quote: Quote; update: (patch: Partial<Quote>) => void; rated: ErieQuoteResult; existing: Policy[] }) {
   const { notify } = usePortal();
   const [emailOpen, setEmailOpen] = useState(false);
   const [email, setEmail] = useState(quote.applicant.email);
-  const plans: PayPlan[] = ['Annual', 'Quarterly', '9 Month', 'Monthly'];
+  const savings = -rated.bundleCredits.reduce((s, c) => s + c.amount, 0);
+  const lineTitle = (key: string, name: string) => (key === 'auto' ? `${name} — ${quote.vehicles.length} vehicle(s), ${quote.drivers.length} driver(s)` : key === 'home' ? `${name} — ${quote.applicant.address}` : key === 'boat' ? `${name} — ${quote.boat.year} ${quote.boat.make} ${quote.boat.model}` : key.startsWith('commercial:') ? `${name} — ${quote.commercial.business.businessName}` : name);
   return <>
     <div className="wizard-actions-row"><button type="button" className="outline-action" onClick={() => setEmailOpen(true)}><Mail size={13} /> EMAIL QUOTE</button><button type="button" className="outline-action" onClick={() => window.print()}><Printer size={13} /> PRINT</button></div>
-    {premiums.auto && <><h2 className="section-h">Auto — {quote.vehicles.length} vehicle(s), {quote.drivers.length} driver(s)</h2><BreakdownTable breakdown={premiums.auto} /></>}
-    {premiums.home && <><h2 className="section-h">ErieSecure Home — {quote.applicant.address}</h2><BreakdownTable breakdown={premiums.home} /></>}
-    {premiums.boat && <><h2 className="section-h">Boat — {quote.boat.year} {quote.boat.make} {quote.boat.model}</h2><BreakdownTable breakdown={premiums.boat} /></>}
-    {premiums.life && <><h2 className="section-h">ERIExpress Life — Erie Family Life Insurance Company</h2><BreakdownTable breakdown={premiums.life} /></>}
+    {rated.lines.map((l) => <div key={l.key}><h2 className="section-h">{lineIcon(l.key)} {lineTitle(l.key, l.breakdown.name ?? l.breakdown.product)}</h2><BreakdownTable breakdown={l.breakdown} /></div>)}
+    <h2 className="section-h">Multi-policy bundle</h2>
+    {rated.bundleCredits.length === 0 ? <p className="px-muted">No bundle credits yet. Auto + Home earns 10% on auto and 15% on home; adding an Umbrella earns another 5%; adding Commercial Lines earns a further 5% across the account.</p>
+      : <table className="px-table breakdown"><tbody>{rated.bundleCredits.map((c) => <tr key={c.label} className="discount"><td>{c.label}</td><td className="num">−{money(-c.amount)}</td></tr>)}<tr className="total"><td>Total multi-policy savings</td><td className="num">{money(savings)}</td></tr></tbody></table>}
+    <h2 className="section-h">Account total</h2>
+    <table className="px-table breakdown"><tbody><tr><td>Premium (all lines, after discounts)</td><td className="num">{money(rated.premium)}</td></tr>{rated.taxes.map((t) => <tr key={t.label}><td>{t.label}</td><td className="num">{money(t.amount)}</td></tr>)}<tr className="total"><td>Total annual cost</td><td className="num">{money(rated.total)}</td></tr></tbody></table>
     <h2 className="section-h">Payment plan</h2>
-    <div className="plan-grid">{plans.map((plan) => { const s = installmentSchedule(total, plan, quote.autoPay); return <label key={plan} className={`plan ${quote.payPlan === plan ? 'on' : ''}`}><input type="radio" name="plan" checked={quote.payPlan === plan} onChange={() => update({ payPlan: plan })} /><strong>{plan}</strong><span>{s.count} payment{s.count > 1 ? 's' : ''} of {money(s.perPayment, true)}</span>{s.fee > 0 && <small>includes ${s.fee} installment fee</small>}{plan === 'Annual' && <small>Pay-in-full discount applied</small>}</label>; })}</div>
+    <div className="plan-grid five">{PAY_PLANS.map((plan) => { const planTotal = rateQuote(quote, existing, plan).total; const s = installmentSchedule(planTotal, plan, quote.autoPay); return <label key={plan} className={`plan ${quote.payPlan === plan ? 'on' : ''}`}><input type="radio" name="plan" checked={quote.payPlan === plan} onChange={() => update({ payPlan: plan })} /><strong>{payPlanLabel[plan]}</strong><span>{s.count} × {money(s.perPayment, true)}</span><span className="plan-total">{money(s.totalCost)} total</span>{s.fee > 0 && <small>includes ${s.fee} installment fee</small>}{plan === 'Annual' && <small>Pay-in-full discount</small>}</label>; })}</div>
     <label className="px-checks autopay"><input type="checkbox" checked={quote.autoPay} onChange={(e) => update({ autoPay: e.target.checked })} /> Enroll in AutoPay (EFT) — waives all installment fees</label>
-    <div className="grand-total"><span>Total estimated annual premium</span><strong>{money(total)}</strong></div>
+    <div className="grand-total"><span>Total estimated annual cost</span><strong>{money(rated.total)}</strong></div>
     {emailOpen && <Modal title="Email quote proposal" onClose={() => setEmailOpen(false)} footer={<button type="button" className="px-btn" onClick={() => { if (!/^\S+@\S+\.\S+$/.test(email)) return; update({ applicant: { ...quote.applicant, email } }); setEmailOpen(false); notify(`Quote proposal emailed to ${email}.`); }}>Send</button>}><Field label="Customer email" required><input type="email" value={email} onChange={(e) => setEmail(e.target.value)} /></Field><p className="px-muted">The proposal includes coverages, premium by product and payment plan options. Quotes are valid for 30 days.</p></Modal>}
   </>;
 }

@@ -9,6 +9,7 @@ const QuoteSearchPage = lazy(() => import('@/QuoteSearchPage'));
 const ProductSelectionPage = lazy(() => import('@/ProductSelectionPage'));
 const QuoteWizard = lazy(() => import('@/pages/QuoteWizard'));
 const QuotesListPage = lazy(() => import('@/pages/QuotesPages').then((m) => ({ default: m.QuotesListPage })));
+const WizardEntry = lazy(() => import('@/pages/QuotesPages').then((m) => ({ default: m.WizardEntry })));
 const TemplatesPage = lazy(() => import('@/pages/QuotesPages').then((m) => ({ default: m.TemplatesPage })));
 const CommercialQuotePage = lazy(() => import('@/pages/CommercialQuotePage'));
 const CustomerSearchPage = lazy(() => import('@/pages/CustomerPages').then((m) => ({ default: m.CustomerSearchPage })));
@@ -45,6 +46,7 @@ function App() {
     <Route path="/quotes/search-results" element={<QuoteSearchPage />} />
     <Route path="/quotes/select-products" element={<ProductSelectionPage />} />
     <Route path="/quotes/underwriting" element={<Navigate to="/quotes" replace />} />
+    <Route path="/quotes/wizard" element={<WizardEntry />} />
     <Route path="/quotes/:quoteId/:step" element={<QuoteWizard />} />
     <Route path="/commercial/quote" element={<CommercialQuotePage />} />
 

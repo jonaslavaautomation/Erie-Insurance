@@ -1,4 +1,4 @@
-import type { AutoCoverages, BillingAccount, BoatDetails, Claim, Customer, Driver, Envelope, HomeCoverages, Lead, LifeDetails, Policy, Property, Quote, Vehicle } from '@/data/types';
+import type { AutoCoverages, BillingAccount, BoatDetails, Claim, CommercialDetails, Customer, Driver, Envelope, HomeCoverages, Lead, LifeDetails, Policy, Property, Quote, UmbrellaDetails, Vehicle } from '@/data/types';
 import { rateAuto, rateHome } from '@/lib/rating';
 
 // Sample data for the demo portal. None of these are real ERIE customers.
@@ -24,7 +24,8 @@ export const defaultAutoCoverages: AutoCoverages = {
   collisionDeductible: 500,
   rateLock: true,
   autoPlus: false,
-  roadsideRentals: false,
+  emergencyRoadService: false,
+  transportationExpense: false,
   newAutoSecurity: false,
 };
 
@@ -45,6 +46,9 @@ export const defaultProperty: Property = {
 
 export const defaultHomeCoverages: HomeCoverages = {
   dwelling: 325000,
+  otherStructuresPct: 10,
+  personalPropertyPct: 70,
+  lossOfUsePct: 20,
   personalLiability: 300000,
   medicalPayments: 5000,
   deductible: 1000,
@@ -74,6 +78,29 @@ export const defaultBoat: BoatDetails = {
   deductible: 500,
   towing: false,
   fishingEquipment: 0,
+};
+
+export const defaultUmbrella: UmbrellaDetails = {
+  limit: 1000000,
+  autoExposures: 2,
+  youthfulOperators: 0,
+  watercraft: 0,
+  recreationalVehicles: 0,
+  residences: 1,
+  otherAutoLimits: '',
+  otherHomeLiability: 0,
+};
+
+export const defaultCommercial: CommercialDetails = {
+  lines: ['bop'],
+  business: {
+    businessName: '', ownerFirst: '', ownerLast: '', entity: 'LLC', fein: '', yearsInBusiness: 3, classCode: '', description: '', revenue: 450000, payroll: 120000, employees: 4,
+    address: '', city: '', state: 'WI', zip: '', phone: '', email: '', ownsBuilding: false, construction: 'Joisted Masonry', yearBuilt: 1990, squareFeet: 2400, sprinklered: false, alarm: 'None',
+    buildingLimit: 0, bppLimit: 75000, glLimit: '1M/2M', propertyDeductible: 1000, cyber: false, epli: false, hiredNonOwnedAuto: false, equipmentBreakdown: false, employeeDishonesty: false,
+  },
+  contractors: { trade: '', subcontractedPct: 10, equipmentFloater: 25000, installationFloater: 15000, toolsLimit: 5000, additionalInsuredBlanket: true },
+  commercialAuto: { vehicles: [], drivers: [], liability: '1,000,000 CSL', physicalDamageDeductible: 1000, garagekeepers: false, garagekeepersLimit: 50000, hiredNonOwned: false },
+  workersComp: { classes: [], experienceMod: 1, employersLiability: '500/500/500' },
 };
 
 export const defaultLife: LifeDetails = {
@@ -129,14 +156,14 @@ function baseHistory(seed: PolicySeed): Policy['history'] {
 const policies: Policy[] = [
   autoPolicy({ number: 'A05-2817734', type: 'Auto', customerId: 'C-100231', status: 'Active', effective: '2026-03-01', expiration: '2027-03-01', payPlan: 'Monthly', autoPay: true, agentNumber: 'Agent #10492', description: '2 vehicles · 2 drivers', drivers: [driver('D1', 'David', 'Guttenberg', '1968-07-14'), driver('D2', 'Karen', 'Guttenberg', '1970-04-02', { gender: 'F', relationship: 'Spouse' })], vehicles: [vehicle('V1', 2022, 'Subaru', 'Outback', '4S4BTANC5N3184471', { garagingZip: '16335' }), vehicle('V2', 2019, 'Ford', 'F-150', '1FTEW1E53KFA77210', { garagingZip: '16335', use: 'Pleasure' })], autoCoverages: { ...defaultAutoCoverages, autoPlus: true } }, true),
   homePolicy({ number: 'H07-1938842', type: 'Home', customerId: 'C-100231', status: 'Active', effective: '2026-03-01', expiration: '2027-03-01', payPlan: 'Annual', autoPay: false, agentNumber: 'Agent #10492', description: 'ErieSecure Home · 509 Erie Insurance Way', drivers: [], vehicles: [], property: { ...defaultProperty, yearBuilt: 1987, squareFeet: 2450 }, homeCoverages: { ...defaultHomeCoverages, dwelling: 385000, waterBackup: true } }, true),
-  autoPolicy({ number: 'A05-3302915', type: 'Auto', customerId: 'C-100458', status: 'Active', effective: '2026-06-15', expiration: '2027-06-15', payPlan: 'Quarterly', autoPay: false, agentNumber: 'Agent #20941', description: '1 vehicle · 1 driver', drivers: [driver('D1', 'Maria', 'Johnson', '1984-11-23', { gender: 'F', maritalStatus: 'Single' })], vehicles: [vehicle('V1', 2024, 'Toyota', 'RAV4 Hybrid', '2T3RWRFV4RW210984')], autoCoverages: { ...defaultAutoCoverages, newAutoSecurity: true, roadsideRentals: true } }, false),
+  autoPolicy({ number: 'A05-3302915', type: 'Auto', customerId: 'C-100458', status: 'Active', effective: '2026-06-15', expiration: '2027-06-15', payPlan: 'Quarterly', autoPay: false, agentNumber: 'Agent #20941', description: '1 vehicle · 1 driver', drivers: [driver('D1', 'Maria', 'Johnson', '1984-11-23', { gender: 'F', maritalStatus: 'Single' })], vehicles: [vehicle('V1', 2024, 'Toyota', 'RAV4 Hybrid', '2T3RWRFV4RW210984')], autoCoverages: { ...defaultAutoCoverages, newAutoSecurity: true, emergencyRoadService: true, transportationExpense: true } }, false),
   simplePolicy({ number: 'L22-0045871', type: 'Life', customerId: 'C-100458', status: 'Active', effective: '2023-02-01', expiration: '2043-02-01', payPlan: 'Monthly', autoPay: true, agentNumber: 'Agent #20941', description: 'ERIE Lifetime Term · $500,000 face', drivers: [], vehicles: [], premium: 384 }),
   autoPolicy({ number: 'A05-1120456', type: 'Auto', customerId: 'C-100772', status: 'Pending Cancel', effective: '2026-09-10', expiration: '2027-09-10', payPlan: 'Monthly', autoPay: false, agentNumber: 'Agent #10492', description: '3 vehicles · 3 drivers', drivers: [driver('D1', 'Robert', 'Kowalski', '1957-02-09'), driver('D2', 'Janet', 'Kowalski', '1959-10-17', { gender: 'F', relationship: 'Spouse' }), driver('D3', 'Tyler', 'Kowalski', '2007-03-21', { maritalStatus: 'Single', relationship: 'Child', yearsLicensed: 2, driverTraining: true, violations: 1 })], vehicles: [vehicle('V1', 2021, 'Chevrolet', 'Silverado 1500', '3GCUYDED2MG142256', { garagingZip: '53186' }), vehicle('V2', 2017, 'Honda', 'Civic', '19XFC2F59HE019944', { garagingZip: '53186' }), vehicle('V3', 2008, 'Harley-Davidson', 'Sportster', '1HD1CT3138K431209', { garagingZip: '53186', use: 'Pleasure', reducedUsage: true, annualMiles: 2500 })], autoCoverages: defaultAutoCoverages }, true),
   homePolicy({ number: 'H07-0821193', type: 'Home', customerId: 'C-100772', status: 'Active', effective: '2026-09-10', expiration: '2027-09-10', payPlan: '9 Month', autoPay: true, agentNumber: 'Agent #10492', description: 'ErieSecure Home · 88 Mill Pond Road', drivers: [], vehicles: [], property: { ...defaultProperty, yearBuilt: 1964, construction: 'Masonry', roofYear: 2009 }, homeCoverages: { ...defaultHomeCoverages, dwelling: 290000, equipmentBreakdown: true } }, true),
   simplePolicy({ number: 'B09-0402218', type: 'Boat', customerId: 'C-100772', status: 'Active', effective: '2026-04-01', expiration: '2027-04-01', payPlan: 'Annual', autoPay: false, agentNumber: 'Agent #10492', description: '2015 Lund 1875 Impact · 150 HP', drivers: [], vehicles: [], premium: 412 }),
   autoPolicy({ number: 'A05-4471802', type: 'Auto', customerId: 'C-101034', status: 'Active', effective: '2026-01-20', expiration: '2027-01-20', payPlan: 'Monthly', autoPay: true, agentNumber: 'Agent #20941', description: '1 vehicle · 1 driver', drivers: [driver('D1', 'Aisha', 'Thompson', '1991-05-30', { gender: 'F', maritalStatus: 'Single', accidents: 1 })], vehicles: [vehicle('V1', 2020, 'Mazda', 'CX-5', 'JM3KFBCM4L0812345', { garagingZip: '53711', lienholder: 'UW Credit Union' })], autoCoverages: { ...defaultAutoCoverages, collisionDeductible: 1000 } }, false),
   homePolicy({ number: 'H07-2290571', type: 'Home', customerId: 'C-101290', status: 'Active', effective: '2025-11-01', expiration: '2026-11-01', payPlan: 'Annual', autoPay: false, agentNumber: 'Agent #10492', description: 'ErieSecure Home · 17 Willow Bend Court', drivers: [], vehicles: [], property: { ...defaultProperty, yearBuilt: 2018, construction: 'Masonry Veneer', roofYear: 2018, burglarAlarm: true }, homeCoverages: { ...defaultHomeCoverages, dwelling: 520000, serviceLine: true, scheduledValuables: 18000 } }, false),
-  simplePolicy({ number: 'U03-0098154', type: 'Umbrella', customerId: 'C-101290', status: 'Active', effective: '2025-11-01', expiration: '2026-11-01', payPlan: 'Annual', autoPay: false, agentNumber: 'Agent #10492', description: 'Personal Catastrophe Liability · $1,000,000', drivers: [], vehicles: [], premium: 245 }),
+  simplePolicy({ number: 'U03-0098154', type: 'Umbrella', customerId: 'C-101290', status: 'Active', effective: '2025-11-01', expiration: '2026-11-01', payPlan: 'Annual', autoPay: false, agentNumber: 'Agent #10492', description: 'Personal Catastrophe Liability · $1,000,000', drivers: [], vehicles: [], premium: 245, umbrella: { limit: 1000000, autoExposures: 2, youthfulOperators: 0, watercraft: 0, recreationalVehicles: 0, residences: 1, otherAutoLimits: '250/500', otherHomeLiability: 300000 } }),
   simplePolicy({ number: 'Q97-5520193', type: 'Business', customerId: 'C-101533', status: 'Active', effective: '2026-07-01', expiration: '2027-07-01', payPlan: 'Quarterly', autoPay: true, agentNumber: 'Agent #10492', description: 'ErieSecure Business® · Schaefer Floral & Gifts', drivers: [], vehicles: [], premium: 3180 }),
 ];
 
@@ -192,6 +219,8 @@ const sampleQuote: Quote = {
   homeCoverages: defaultHomeCoverages,
   boat: defaultBoat,
   life: defaultLife,
+  umbrella: defaultUmbrella,
+  commercial: defaultCommercial,
   priorCarrier: 'American Family',
   priorYears: 6,
   payPlan: 'Monthly',

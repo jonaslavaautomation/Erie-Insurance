@@ -1,13 +1,13 @@
 import { FormEvent, useState } from 'react';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
-import { Car, FilePlus2, Home, LifeBuoy, Mail, Pencil, Phone, Sailboat, Shield, Store, Umbrella, Wallet } from 'lucide-react';
+import { Car, HardHat, Truck, FilePlus2, Home, LifeBuoy, Mail, Pencil, Phone, Sailboat, Shield, Store, Umbrella, Wallet } from 'lucide-react';
 import PortalLayout from '@/components/PortalLayout';
 import { Empty, Field, Modal, PageTitle, Panel, StatusBadge } from '@/components/ui';
 import { fullName, usePortal } from '@/data/store';
 import { money } from '@/lib/rating';
 import type { Customer, PolicyType } from '@/data/types';
 
-export const policyIcon: Record<PolicyType, typeof Car> = { Auto: Car, Home, Boat: Sailboat, Life: LifeBuoy, Umbrella, Business: Store };
+export const policyIcon: Record<PolicyType, typeof Car> = { Auto: Car, Home, Boat: Sailboat, Life: LifeBuoy, Umbrella, Business: Store, 'Commercial Auto': Truck, 'Workers Comp': HardHat };
 
 export function CustomerSearchPage() {
   const [params, setParams] = useSearchParams();

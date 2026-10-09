@@ -43,7 +43,7 @@ export default function ReportsPage() {
   const { policies, claims, customers, quotes } = usePortal();
   const active = reports.find((r) => r.id === id) ?? reports[0];
   const inForce = policies.filter((p) => p.status !== 'Cancelled');
-  const types: PolicyType[] = ['Auto', 'Home', 'Boat', 'Life', 'Umbrella', 'Business'];
+  const types: PolicyType[] = ['Auto', 'Home', 'Umbrella', 'Boat', 'Life', 'Business', 'Commercial Auto', 'Workers Comp'];
 
   const byLine = useMemo(() => types.map((t) => {
     const ps = inForce.filter((p) => p.type === t);

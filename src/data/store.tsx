@@ -1,8 +1,9 @@
 import { createContext, ReactNode, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { supabase } from '@/lib/supabase';
-import { ageFrom, rateAuto, rateBoat, rateHome, rateLife } from '@/lib/rating';
-import { AGENT, createSeed, defaultAutoCoverages, defaultBoat, defaultHomeCoverages, defaultLife, defaultProperty, PortalData } from '@/data/seed';
-import type { BillingAccount, BusinessDetails, Claim, Customer, Envelope, Lead, Payment, Policy, PolicyType, Quote, Toast } from '@/data/types';
+import { ageFrom, calculateErieQuote, ErieQuoteResult, payPlanInstallments, QuoteLineKey, rateAuto, rateBoat, rateHome, rateLife, rateUmbrella } from '@/lib/rating';
+import { rateBusiness, rateCommercialAuto, rateContractors, rateWorkersComp } from '@/data/commercial';
+import { AGENT, createSeed, defaultAutoCoverages, defaultBoat, defaultCommercial, defaultHomeCoverages, defaultLife, defaultProperty, defaultUmbrella, PortalData } from '@/data/seed';
+import type { AutoCoverages, BillingAccount, Claim, CommercialLine, Customer, Envelope, HomeCoverages, Lead, Payment, Policy, PolicyType, PremiumBreakdown, Quote, Toast } from '@/data/types';
 
 const STORAGE_KEY = 'erie-agentexchange-demo-v1';
 
@@ -13,7 +14,13 @@ const addYears = (date: string, years: number) => { const d = new Date(`${date}T
 const addDays = (date: string, days: number) => { const d = new Date(`${date}T12:00:00`); d.setDate(d.getDate() + days); return d.toISOString().slice(0, 10); };
 const addMonths = (date: string, months: number) => { const d = new Date(`${date}T12:00:00`); d.setMonth(d.getMonth() + months); return d.toISOString().slice(0, 10); };
 
-const policyPrefix: Record<PolicyType, string> = { Auto: 'A05', Home: 'H07', Boat: 'B09', Life: 'L22', Umbrella: 'U03', Business: 'Q97' };
+const policyPrefix: Record<PolicyType, string> = { Auto: 'A05', Home: 'H07', Boat: 'B09', Life: 'L22', Umbrella: 'U03', Business: 'Q97', 'Commercial Auto': 'CA1', 'Workers Comp': 'WC4' };
+const clone = <T,>(value: T): T => JSON.parse(JSON.stringify(value)) as T;
+
+// Older saved data used a single "Roadside & Rentals" flag and fixed B/C/D percentages.
+type LegacyAuto = AutoCoverages & { roadsideRentals?: boolean };
+const migrateAuto = (a?: LegacyAuto): AutoCoverages | undefined => (a ? { ...a, emergencyRoadService: a.emergencyRoadService ?? !!a.roadsideRentals, transportationExpense: a.transportationExpense ?? !!a.roadsideRentals } : a);
+const migrateHome = (h?: HomeCoverages): HomeCoverages | undefined => (h ? { ...h, otherStructuresPct: h.otherStructuresPct ?? 10, personalPropertyPct: h.personalPropertyPct ?? 70, lossOfUsePct: h.lossOfUsePct ?? 20 } : h);
 const adjusters = [
   { name: 'Megan Reilly', phone: '(800) 367-3743 x4471', email: 'megan.reilly@erieinsurance.example' },
   { name: 'Carlos Medina', phone: '(800) 367-3743 x5120', email: 'carlos.medina@erieinsurance.example' },
@@ -27,8 +34,12 @@ function loadData(): PortalData {
     if (raw) {
       // Activity saved under the previous account owner is re-attributed to the current one.
       const data = JSON.parse(raw.split('Vito Bitanghol').join(AGENT.name).split('Bitanghol Insurance Agency, LLC').join(AGENT.agency)) as PortalData;
-      // Quotes saved before boat/life quoting existed get default details.
-      return { ...data, quotes: data.quotes.map((q) => ({ ...q, boat: q.boat ?? { ...defaultBoat }, life: q.life ?? { ...defaultLife } })) };
+      // Quotes saved before newer product lines existed get default details.
+      return {
+        ...data,
+        quotes: data.quotes.map((q) => ({ ...q, boat: q.boat ?? { ...defaultBoat }, life: q.life ?? { ...defaultLife }, umbrella: q.umbrella ?? { ...defaultUmbrella }, commercial: q.commercial ?? clone(defaultCommercial), autoCoverages: migrateAuto(q.autoCoverages)!, homeCoverages: migrateHome(q.homeCoverages)! })),
+        policies: data.policies.map((p) => ({ ...p, autoCoverages: migrateAuto(p.autoCoverages), homeCoverages: migrateHome(p.homeCoverages) })),
+      };
     }
   } catch {
     // Storage can be unavailable (private mode); fall back to seed data.
@@ -54,6 +65,8 @@ export function newQuoteDraft(applicant: Quote['applicant'], customerId?: string
     homeCoverages: { ...defaultHomeCoverages },
     boat: { ...defaultBoat },
     life: { ...defaultLife },
+    umbrella: { ...defaultUmbrella },
+    commercial: clone(defaultCommercial),
     priorCarrier: '',
     priorYears: 0,
     payPlan: 'Monthly',
@@ -66,18 +79,50 @@ export function newQuoteDraft(applicant: Quote['applicant'], customerId?: string
   };
 }
 
-export function quotePremiums(quote: Quote) {
-  const multiPolicy = quote.products.filter((p) => p === 'auto' || p === 'home').length > 1;
-  const daysOut = (new Date(quote.effectiveDate).getTime() - Date.now()) / 86400000;
-  return {
-    auto: quote.products.includes('auto') ? rateAuto(quote.applicant.state, quote.drivers, quote.vehicles, quote.autoCoverages, { multiPolicy, payPlan: quote.payPlan, autoPay: quote.autoPay }) : null,
-    home: quote.products.includes('home') ? rateHome(quote.applicant.state, quote.property, quote.homeCoverages, { multiPolicy, earlyQuote: daysOut >= 7, payPlan: quote.payPlan }) : null,
-    boat: quote.products.includes('boat') ? rateBoat(quote.applicant.state, quote.boat, { multiPolicy: quote.products.length > 1, payPlan: quote.payPlan }) : null,
-    life: quote.products.includes('life') ? rateLife(ageFrom(quote.applicant.dob), quote.life) : null,
-  };
+export function rateCommercialLine(line: CommercialLine, quote: Quote): PremiumBreakdown {
+  const c = quote.commercial;
+  const state = c.business.state || quote.applicant.state;
+  if (line === 'bop') return rateBusiness({ ...c.business, state });
+  if (line === 'contractors') return rateContractors(c.contractors, c.business.revenue, state, c.business.glLimit);
+  if (line === 'commercialAuto') return rateCommercialAuto(c.commercialAuto, state);
+  return rateWorkersComp(c.workersComp, state);
 }
 
-export const premiumTotal = (premiums: ReturnType<typeof quotePremiums>) => (premiums.auto?.total ?? 0) + (premiums.home?.total ?? 0) + (premiums.boat?.total ?? 0) + (premiums.life?.total ?? 0);
+/**
+ * Rates every line on the quote and combines them into one account quote with bundle credits,
+ * taxes and the installment schedule. `existing` are the customer's in-force policies, which
+ * count toward the auto + home multi-policy discount just like lines on this quote.
+ */
+export function rateQuote(quote: Quote, existing: Policy[] = [], payPlan = quote.payPlan): ErieQuoteResult {
+  const has = (p: Quote['products'][number]) => quote.products.includes(p);
+  const holds = (t: PolicyType) => existing.some((p) => p.type === t && p.status !== 'Cancelled');
+  const multiPolicy = (has('auto') || holds('Auto')) && (has('home') || holds('Home')) && (has('auto') || has('home'));
+  const daysOut = (new Date(quote.effectiveDate).getTime() - Date.now()) / 86400000;
+  const state = quote.applicant.state;
+  const lines: { key: QuoteLineKey; breakdown: PremiumBreakdown }[] = [];
+  if (has('auto')) lines.push({ key: 'auto', breakdown: rateAuto(state, quote.drivers, quote.vehicles, quote.autoCoverages, { multiPolicy, payPlan, autoPay: quote.autoPay }) });
+  if (has('home')) lines.push({ key: 'home', breakdown: rateHome(state, quote.property, quote.homeCoverages, { multiPolicy, earlyQuote: daysOut >= 7, payPlan }) });
+  if (has('umbrella')) lines.push({ key: 'umbrella', breakdown: rateUmbrella(state, quote.umbrella) });
+  if (has('boat')) lines.push({ key: 'boat', breakdown: rateBoat(state, quote.boat, { multiPolicy: quote.products.length > 1 || existing.length > 0, payPlan }) });
+  if (has('life')) lines.push({ key: 'life', breakdown: rateLife(ageFrom(quote.applicant.dob), quote.life) });
+  if (has('commercial')) quote.commercial.lines.forEach((line) => lines.push({ key: `commercial:${line}`, breakdown: rateCommercialLine(line, quote) }));
+  return calculateErieQuote({
+    state,
+    payPlan,
+    autoPay: quote.autoPay,
+    lines,
+    factors: {
+      homeCoverageA: has('home') ? quote.homeCoverages.dwelling : 0,
+      autoVehiclesCount: has('auto') ? quote.vehicles.length : 0,
+      autoDriversCount: has('auto') ? quote.drivers.length : 0,
+      umbrellaLimit: has('umbrella') ? quote.umbrella.limit : 0,
+      commercialPayroll: has('commercial') ? quote.commercial.workersComp.classes.reduce((s, c) => s + c.payroll, 0) || quote.commercial.business.payroll : 0,
+      commercialRevenue: has('commercial') ? quote.commercial.business.revenue : 0,
+    },
+  });
+}
+
+export const lineOf = (rated: ErieQuoteResult, key: QuoteLineKey) => rated.lines.find((l) => l.key === key)?.breakdown ?? null;
 
 type StoreValue = PortalData & {
   toasts: Toast[];
@@ -88,7 +133,6 @@ type StoreValue = PortalData & {
   archiveQuotes: (ids: string[], archived: boolean) => void;
   issueQuote: (id: string) => string[];
   updateCustomer: (customer: Customer) => void;
-  issueBusinessPolicy: (business: BusinessDetails, terms: { premium: number; effective: string; payPlan: Policy['payPlan']; autoPay: boolean; agentNumber: string }) => string;
   updatePolicy: (number: string, patch: Partial<Policy>, historyText: string) => void;
   cancelPolicy: (number: string, reason: string, date: string) => void;
   reinstatePolicy: (number: string) => void;
@@ -159,7 +203,6 @@ export function PortalStoreProvider({ children }: { children: ReactNode }) {
     const quote = current.quotes.find((q) => q.id === id);
     if (!quote) return issued;
     {
-      const premiums = quotePremiums(quote);
       let customers = current.customers;
       let customerId = quote.customerId;
       if (!customerId || !customers.some((c) => c.id === customerId)) {
@@ -172,17 +215,30 @@ export function PortalStoreProvider({ children }: { children: ReactNode }) {
       }
       const newPolicies: Policy[] = [];
       const newBilling: BillingAccount[] = [];
-      const make = (type: PolicyType, premium: number, extra: Partial<Policy>) => {
+      const rated = rateQuote(quote, current.policies.filter((p) => p.customerId === customerId));
+      const line = (key: QuoteLineKey) => rated.lines.find((l) => l.key === key);
+      const productOf: Partial<Record<PolicyType, Quote['products'][number]>> = { Auto: 'auto', Home: 'home', Umbrella: 'umbrella', Boat: 'boat', Life: 'life', Business: 'commercial', 'Commercial Auto': 'commercial', 'Workers Comp': 'commercial' };
+      // Each policy is billed its bundled premium plus its share of state premium taxes.
+      const make = (type: PolicyType, key: QuoteLineKey, extra: Partial<Policy>) => {
+        const rl = line(key);
+        if (!rl) return;
+        const premium = rl.breakdown.total;
         const number = `${policyPrefix[type]}-${randomDigits(7)}`;
         issued.push(number);
-        const installments = { Annual: 1, Quarterly: 4, '9 Month': 9, Monthly: 12 }[quote.payPlan];
-        newPolicies.push({ number, type, customerId: customerId!, status: 'Active', effective: quote.effectiveDate, expiration: addYears(quote.effectiveDate, 1), premium, payPlan: quote.payPlan, autoPay: quote.autoPay, agentNumber: quote.agentNumbers[type.toLowerCase() as 'auto'] ?? AGENT.agentNumbers[0], drivers: [], vehicles: [], description: '', documents: [{ name: 'Declarations Page', date: quote.effectiveDate, kind: 'Declarations' }, { name: 'Signed Application', date: today(), kind: 'Application' }, { name: 'Initial Bill', date: today(), kind: 'Bill' }], history: [{ date: today(), text: `New business issued from quote ${quote.id}`, by: AGENT.name }], quoteId: quote.id, ...extra });
-        newBilling.push({ policyNumber: number, balance: premium, nextDueDate: quote.effectiveDate, minimumDue: Math.round((premium / installments) * 100) / 100, payments: [] });
+        const installments = payPlanInstallments[quote.payPlan];
+        newBilling.push({ policyNumber: number, balance: premium + rl.tax, nextDueDate: quote.effectiveDate, minimumDue: Math.round(((premium + rl.tax) / installments) * 100) / 100, payments: [] });
+        newPolicies.push({ number, type, customerId: customerId!, status: 'Active', effective: quote.effectiveDate, expiration: addYears(quote.effectiveDate, 1), premium, payPlan: quote.payPlan, autoPay: quote.autoPay, agentNumber: quote.agentNumbers[productOf[type] ?? 'auto'] ?? AGENT.agentNumbers[0], drivers: [], vehicles: [], description: '', documents: [{ name: 'Declarations Page', date: quote.effectiveDate, kind: 'Declarations' }, { name: 'Signed Application', date: today(), kind: 'Application' }, { name: 'Initial Bill', date: today(), kind: 'Bill' }], history: [{ date: today(), text: `New business issued from quote ${quote.id}`, by: AGENT.name }], quoteId: quote.id, ...extra });
       };
-      if (premiums.auto) make('Auto', premiums.auto.total, { drivers: quote.drivers, vehicles: quote.vehicles, autoCoverages: quote.autoCoverages, description: `${quote.vehicles.length} vehicle${quote.vehicles.length === 1 ? '' : 's'} · ${quote.drivers.length} driver${quote.drivers.length === 1 ? '' : 's'}`, documents: [{ name: 'Auto ID Cards', date: quote.effectiveDate, kind: 'ID Card' }, { name: 'Declarations Page', date: quote.effectiveDate, kind: 'Declarations' }, { name: 'Signed Application', date: today(), kind: 'Application' }] });
-      if (premiums.home) make('Home', premiums.home.total, { property: quote.property, homeCoverages: quote.homeCoverages, description: `ErieSecure Home · ${quote.applicant.address}` });
-      if (premiums.boat) make('Boat', premiums.boat.total, { boat: quote.boat, description: `${quote.boat.year} ${quote.boat.make} ${quote.boat.model} · ${quote.boat.length} ft · ${quote.boat.horsepower} HP` });
-      if (premiums.life) make('Life', premiums.life.total, { life: quote.life, expiration: addYears(quote.effectiveDate, quote.life.term), status: quote.underwriting._approved === 'yes' ? 'Pending Issue' : 'Active', description: `ERIExpress Life · ${quote.life.term}-year term · $${quote.life.faceAmount.toLocaleString()} face` });
+      const biz = quote.commercial.business;
+      make('Auto', 'auto', { drivers: quote.drivers, vehicles: quote.vehicles, autoCoverages: quote.autoCoverages, description: `${quote.vehicles.length} vehicle${quote.vehicles.length === 1 ? '' : 's'} · ${quote.drivers.length} driver${quote.drivers.length === 1 ? '' : 's'}`, documents: [{ name: 'Auto ID Cards', date: quote.effectiveDate, kind: 'ID Card' }, { name: 'Declarations Page', date: quote.effectiveDate, kind: 'Declarations' }, { name: 'Signed Application', date: today(), kind: 'Application' }] });
+      make('Home', 'home', { property: quote.property, homeCoverages: quote.homeCoverages, description: `ErieSecure Home · ${quote.applicant.address}` });
+      make('Umbrella', 'umbrella', { umbrella: quote.umbrella, description: `Personal Catastrophe Liability · $${quote.umbrella.limit.toLocaleString()}` });
+      make('Business', 'commercial:bop', { business: biz, description: `Ultrapack Plus · ${biz.businessName}` });
+      make('Business', 'commercial:contractors', { business: biz, contractors: quote.commercial.contractors, description: `Fivestar Contractors · ${biz.businessName}` });
+      make('Commercial Auto', 'commercial:commercialAuto', { business: biz, commercialAuto: quote.commercial.commercialAuto, description: `Commercial Auto · ${quote.commercial.commercialAuto.vehicles.length} unit${quote.commercial.commercialAuto.vehicles.length === 1 ? '' : 's'} · ${biz.businessName}` });
+      make('Workers Comp', 'commercial:workersComp', { business: biz, workersComp: quote.commercial.workersComp, description: `Workers' Compensation · E-Mod ${quote.commercial.workersComp.experienceMod.toFixed(2)} · ${biz.businessName}` });
+      make('Boat', 'boat', { boat: quote.boat, description: `${quote.boat.year} ${quote.boat.make} ${quote.boat.model} · ${quote.boat.length} ft · ${quote.boat.horsepower} HP` });
+      make('Life', 'life', { life: quote.life, expiration: addYears(quote.effectiveDate, quote.life.term), status: quote.underwriting._approved === 'yes' ? 'Pending Issue' : 'Active', description: `ERIExpress Life · ${quote.life.term}-year term · $${quote.life.faceAmount.toLocaleString()} face` });
       const next: PortalData = {
         ...current,
         customers,
@@ -198,19 +254,6 @@ export function PortalStoreProvider({ children }: { children: ReactNode }) {
 
   const updateCustomer = useCallback((customer: Customer) => setData((current) => ({ ...current, customers: current.customers.map((c) => (c.id === customer.id ? customer : c)) })), []);
 
-  const issueBusinessPolicy: StoreValue['issueBusinessPolicy'] = useCallback((business, terms) => {
-    const current = dataRef.current;
-    const number = `${policyPrefix.Business}-${randomDigits(7)}`;
-    const existing = current.customers.find((c) => c.firstName.toLowerCase() === business.ownerFirst.toLowerCase() && c.lastName.toLowerCase() === business.ownerLast.toLowerCase());
-    const customerId = existing?.id ?? `C-${randomDigits(6)}`;
-    const customers = existing ? current.customers : [...current.customers, { id: customerId, firstName: business.ownerFirst, middleName: '', lastName: business.ownerLast, address: business.address, city: business.city, state: business.state, zip: business.zip, dob: '', phone: business.phone, email: business.email, customerSince: terms.effective }];
-    const installments = { Annual: 1, Quarterly: 4, '9 Month': 9, Monthly: 12 }[terms.payPlan];
-    const policy: Policy = { number, type: 'Business', customerId, status: 'Active', effective: terms.effective, expiration: addYears(terms.effective, 1), premium: terms.premium, payPlan: terms.payPlan, autoPay: terms.autoPay, agentNumber: terms.agentNumber, drivers: [], vehicles: [], business, description: `ErieSecure Business® · ${business.businessName}`, documents: [{ name: 'Commercial Declarations', date: terms.effective, kind: 'Declarations' }, { name: 'Signed Commercial Application', date: today(), kind: 'Application' }, { name: 'Initial Bill', date: today(), kind: 'Bill' }], history: [{ date: today(), text: `New business issued — ErieSecure Business® for ${business.businessName}`, by: AGENT.name }] };
-    const next: PortalData = { ...current, customers, policies: [policy, ...current.policies], billing: [{ policyNumber: number, balance: terms.premium, nextDueDate: terms.effective, minimumDue: Math.round((terms.premium / installments) * 100) / 100, payments: [] }, ...current.billing] };
-    dataRef.current = next;
-    setData(next);
-    return number;
-  }, []);
 
   const updatePolicy = useCallback((number: string, patch: Partial<Policy>, historyText: string) => {
     setData((current) => ({ ...current, policies: current.policies.map((p) => (p.number === number ? { ...p, ...patch, history: [{ date: today(), text: historyText, by: AGENT.name }, ...p.history], documents: patch.documents ?? p.documents } : p)) }));
@@ -261,7 +304,7 @@ export function PortalStoreProvider({ children }: { children: ReactNode }) {
   const updateEnvelope = useCallback((id: string, status: Envelope['status']) => setData((current) => ({ ...current, envelopes: current.envelopes.map((e) => (e.id === id ? { ...e, status, sent: status === 'Sent' ? today() : e.sent } : e)) })), []);
   const resetDemo = useCallback(() => setData(createSeed()), []);
 
-  const value = useMemo<StoreValue>(() => ({ ...data, toasts, notify, dismissToast, saveQuote, deleteQuotes, archiveQuotes, issueQuote, updateCustomer, issueBusinessPolicy, updatePolicy, cancelPolicy, reinstatePolicy, addClaim, updateClaim, makePayment, adjustBalance, setAutoPay, updateLead, addEnvelope, updateEnvelope, resetDemo }), [data, toasts, notify, dismissToast, saveQuote, deleteQuotes, archiveQuotes, issueQuote, updateCustomer, issueBusinessPolicy, updatePolicy, cancelPolicy, reinstatePolicy, addClaim, updateClaim, makePayment, adjustBalance, setAutoPay, updateLead, addEnvelope, updateEnvelope, resetDemo]);
+  const value = useMemo<StoreValue>(() => ({ ...data, toasts, notify, dismissToast, saveQuote, deleteQuotes, archiveQuotes, issueQuote, updateCustomer, updatePolicy, cancelPolicy, reinstatePolicy, addClaim, updateClaim, makePayment, adjustBalance, setAutoPay, updateLead, addEnvelope, updateEnvelope, resetDemo }), [data, toasts, notify, dismissToast, saveQuote, deleteQuotes, archiveQuotes, issueQuote, updateCustomer, updatePolicy, cancelPolicy, reinstatePolicy, addClaim, updateClaim, makePayment, adjustBalance, setAutoPay, updateLead, addEnvelope, updateEnvelope, resetDemo]);
 
   return <StoreContext.Provider value={value}>{children}</StoreContext.Provider>;
 }

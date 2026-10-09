@@ -1,9 +1,9 @@
-export type ProductKey = 'auto' | 'home' | 'boat' | 'life';
-export type PolicyType = 'Auto' | 'Home' | 'Boat' | 'Life' | 'Umbrella' | 'Business';
+export type ProductKey = 'auto' | 'home' | 'umbrella' | 'boat' | 'life' | 'commercial';
+export type PolicyType = 'Auto' | 'Home' | 'Boat' | 'Life' | 'Umbrella' | 'Business' | 'Commercial Auto' | 'Workers Comp';
 export type PolicyStatus = 'Active' | 'Pending Cancel' | 'Cancelled' | 'Pending Issue';
 export type QuoteStatus = 'Quote' | 'Referred' | 'Application' | 'Issued' | 'Declined' | 'Archived';
 export type ClaimStatus = 'Reported' | 'Assigned' | 'Inspection' | 'Estimate Review' | 'Repair In Progress' | 'Payment Issued' | 'Closed';
-export type PayPlan = 'Annual' | 'Quarterly' | '9 Month' | 'Monthly';
+export type PayPlan = 'Annual' | 'Semi-Annual' | 'Quarterly' | '9 Month' | 'Monthly';
 
 export type Customer = {
   id: string;
@@ -62,7 +62,8 @@ export type AutoCoverages = {
   collisionDeductible: number;
   rateLock: boolean;
   autoPlus: boolean;
-  roadsideRentals: boolean;
+  emergencyRoadService: boolean;
+  transportationExpense: boolean;
   newAutoSecurity: boolean;
 };
 
@@ -83,6 +84,10 @@ export type Property = {
 
 export type HomeCoverages = {
   dwelling: number;
+  // Coverages B, C and D as a percentage of Coverage A.
+  otherStructuresPct: number;
+  personalPropertyPct: number;
+  lossOfUsePct: number;
   personalLiability: number;
   medicalPayments: number;
   deductible: number;
@@ -128,6 +133,67 @@ export type LifeDetails = {
   waiverOfPremium: boolean;
 };
 
+export type UmbrellaDetails = {
+  limit: number;
+  autoExposures: number;
+  youthfulOperators: number;
+  watercraft: number;
+  recreationalVehicles: number;
+  residences: number;
+  // Used when the underlying auto/home is written by another carrier.
+  otherAutoLimits: string;
+  otherHomeLiability: number;
+};
+
+export type ContractorsDetails = {
+  trade: string;
+  subcontractedPct: number;
+  equipmentFloater: number;
+  installationFloater: number;
+  toolsLimit: number;
+  additionalInsuredBlanket: boolean;
+};
+
+export type CommercialVehicle = {
+  id: string;
+  year: number;
+  make: string;
+  model: string;
+  bodyType: 'Private Passenger' | 'Light Truck' | 'Medium Truck' | 'Heavy Truck';
+  costNew: number;
+  radius: 'Local (0–50 mi)' | 'Intermediate (51–200 mi)' | 'Long Haul (200+ mi)';
+};
+
+export type CommercialDriver = { id: string; name: string; age: number; violations: number; accidents: number };
+
+export type CommercialAutoDetails = {
+  vehicles: CommercialVehicle[];
+  drivers: CommercialDriver[];
+  liability: '500,000 CSL' | '1,000,000 CSL';
+  physicalDamageDeductible: number;
+  garagekeepers: boolean;
+  garagekeepersLimit: number;
+  hiredNonOwned: boolean;
+};
+
+export type WorkersCompClass = { id: string; code: string; payroll: number };
+
+export type WorkersCompDetails = {
+  classes: WorkersCompClass[];
+  experienceMod: number;
+  employersLiability: '100/500/100' | '500/500/500' | '1M/1M/1M';
+};
+
+export type CommercialLine = 'bop' | 'contractors' | 'commercialAuto' | 'workersComp';
+
+export type CommercialDetails = {
+  lines: CommercialLine[];
+  business: BusinessDetails;
+  contractors: ContractorsDetails;
+  commercialAuto: CommercialAutoDetails;
+  workersComp: WorkersCompDetails;
+};
+
 export type BusinessDetails = {
   businessName: string;
   ownerFirst: string;
@@ -166,6 +232,8 @@ export type BusinessDetails = {
 export type PremiumLine = { label: string; amount: number };
 export type PremiumBreakdown = {
   product: PolicyType;
+  // Display name, e.g. "ErieSecure Home®" or "Ultrapack Plus".
+  name?: string;
   lines: PremiumLine[];
   discounts: PremiumLine[];
   total: number;
@@ -199,6 +267,8 @@ export type Quote = {
   homeCoverages: HomeCoverages;
   boat: BoatDetails;
   life: LifeDetails;
+  umbrella: UmbrellaDetails;
+  commercial: CommercialDetails;
   priorCarrier: string;
   priorYears: number;
   payPlan: PayPlan;
@@ -232,6 +302,10 @@ export type Policy = {
   boat?: BoatDetails;
   life?: LifeDetails;
   business?: BusinessDetails;
+  umbrella?: UmbrellaDetails;
+  contractors?: ContractorsDetails;
+  commercialAuto?: CommercialAutoDetails;
+  workersComp?: WorkersCompDetails;
   description: string;
   documents: PolicyDocument[];
   history: HistoryEntry[];
