@@ -3,14 +3,14 @@ import { rateAuto, rateHome } from '@/lib/rating';
 
 // Sample data for the demo portal. None of these are real ERIE customers.
 export const AGENT = {
-  name: 'Vito Bitanghol',
-  sortName: 'Bitanghol, Vito',
-  agency: 'Bitanghol Insurance Agency, LLC',
+  name: 'Nash Rosauro',
+  sortName: 'Rosauro, Nash',
+  agency: 'Rosauro Insurance Agency, LLC',
   state: 'Wisconsin',
   stateCode: 'WI',
   agentNumbers: ['Agent #10492', 'Agent #20941'],
   phone: '(608) 555-0142',
-  email: 'vito@bitangholagency.example',
+  email: 'nash@rosauroagency.example',
   address: '2200 University Ave, Madison, WI 53726',
   districtOffice: 'Wisconsin Branch — Waukesha',
 };

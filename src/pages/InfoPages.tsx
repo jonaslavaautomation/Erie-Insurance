@@ -157,7 +157,7 @@ export function ContestsPage() {
 
 export function LoginPage() {
   const navigate = useNavigate();
-  const [user, setUser] = useState('vbitanghol');
+  const [user, setUser] = useState('nrosauro');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const submit = (e: FormEvent) => { e.preventDefault(); if (!user || password.length < 4) return setError('Enter your user ID and password.'); navigate('/'); };

@@ -25,7 +25,8 @@ function loadData(): PortalData {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (raw) {
-      const data = JSON.parse(raw) as PortalData;
+      // Activity saved under the previous account owner is re-attributed to the current one.
+      const data = JSON.parse(raw.split('Vito Bitanghol').join(AGENT.name).split('Bitanghol Insurance Agency, LLC').join(AGENT.agency)) as PortalData;
       // Quotes saved before boat/life quoting existed get default details.
       return { ...data, quotes: data.quotes.map((q) => ({ ...q, boat: q.boat ?? { ...defaultBoat }, life: q.life ?? { ...defaultLife } })) };
     }

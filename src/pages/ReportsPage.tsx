@@ -4,6 +4,7 @@ import { Download } from 'lucide-react';
 import PortalLayout from '@/components/PortalLayout';
 import { Empty, PageTitle, Panel, Tabs } from '@/components/ui';
 import { addDays, fullName, today, usePortal } from '@/data/store';
+import { AGENT } from '@/data/seed';
 import { money } from '@/lib/rating';
 import type { PolicyType } from '@/data/types';
 
@@ -65,7 +66,7 @@ export default function ReportsPage() {
   const production = months.map((m, i) => ({ name: `${m} 2026`, value: seeded[i] + (i === months.length - 1 ? issuedThisSession : 0) }));
 
   return <PortalLayout><main className="px-page">
-    <PageTitle crumbs={[{ label: 'Reports' }]} title={active.label} subtitle={`As of ${today()} · Agency: Bitanghol Insurance Agency, LLC`} />
+    <PageTitle crumbs={[{ label: 'Reports' }]} title={active.label} subtitle={`As of ${today()} · Agency: ${AGENT.agency}`} />
     <Tabs tabs={reports.map((r) => r.label)} active={active.label} onChange={(label) => navigate(`/reports/${reports.find((r) => r.label === label)!.id}`)} />
 
     {active.id === 'performance' && <>
