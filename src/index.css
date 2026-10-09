@@ -82,7 +82,7 @@ select { appearance: auto; color: #777; }
 .select-action { display: flex; gap: 4px; }
 .select-action select { flex: 1; min-width: 0; }
 .select-action button { width: 29px; flex: 0 0 29px; display: grid; place-items: center; padding: 0; border: 0; background: #0878bc; color: white; }
-.product-help .card-body { min-height: 260px; }
+.product-help-card .card-body { min-height: 260px; }
 .news-hero { display: flex; height: 112px; align-items: center; justify-content: space-between; }
 .news-hero button { width: 32px; height: 58px; padding: 0; border: 0; background: transparent; color: #8c8c8c; }
 .news-hero button:hover { color: #087bbb; }
