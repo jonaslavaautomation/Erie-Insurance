@@ -229,6 +229,13 @@ function account(policyNumber: string, paid: number, nextDueDate: string, method
   const count = payPlanInstallments[policy.payPlan];
   const installment = Math.round((policy.premium / count) * 100) / 100;
   const monthsBetween = 12 / count;
+  // AutoPay drafts on each due date, so installments that have come due since the data was written are posted.
+  const dueAfter = (n: number) => { const d = new Date(`${firstPayment}T12:00:00`); d.setMonth(d.getMonth() + Math.round(n * monthsBetween)); return d.toISOString().slice(0, 10); };
+  const now = new Date().toISOString().slice(0, 10);
+  while (policy.autoPay && method.startsWith('AutoPay') && paid < count && nextDueDate <= now) {
+    paid += 1;
+    nextDueDate = dueAfter(paid);
+  }
   const payments = Array.from({ length: paid }, (_, i) => {
     const d = new Date(`${firstPayment}T12:00:00`);
     d.setMonth(d.getMonth() + Math.round(i * monthsBetween));
@@ -244,7 +251,7 @@ const billing: BillingAccount[] = [
   account('A05-3302915', 2, '2026-12-15', 'Checking ••0912', '2026-06-15', 74904416),
   account('L22-0045871', 9, '2026-11-01', 'AutoPay · Checking ••7732', '2026-02-01', 70810223),
   account('A05-1120456', 0, '2026-09-10', '', '2026-09-10', 0),
-  account('H07-0821193', 1, '2026-10-10', 'AutoPay · Savings ••5508', '2026-09-10', 77440019),
+  account('H07-0821193', 2, '2026-11-10', 'AutoPay · Savings ••5508', '2026-09-10', 77440019),
   account('B09-0402218', 1, '2027-04-01', 'Mastercard ••8820', '2026-03-28', 71228940),
   account('A05-4471802', 9, '2026-10-20', 'AutoPay · Checking ••1187', '2026-01-20', 70612554),
   account('H07-2290571', 1, '2026-11-01', 'Checking ••3390', '2025-10-28', 66509213),
