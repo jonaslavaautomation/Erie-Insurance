@@ -1,10 +1,10 @@
 import { createContext, ReactNode, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { supabase } from '@/lib/supabase';
 import { ageFrom, calculateErieQuote, ErieQuoteResult, payPlanInstallments, QuoteLineKey, rateAuto, rateBoat, rateHome, rateLife, rateUmbrella } from '@/lib/rating';
-import { rateBusiness, rateCommercialAuto, rateContractors, rateWorkersComp } from '@/data/commercial';
+import { LEGACY_CODES, LEGACY_TRADES, liabilityPremium, rateBusiness, rateCommercialAuto, rateCommercialUmbrella, rateContractors, rateWorkersComp } from '@/data/commercial';
 import { afterPayment, dueDates, rebill } from '@/lib/billing';
 import { AGENT, createSeed, defaultAutoCoverages, defaultBoat, defaultCommercial, defaultHomeCoverages, defaultLife, defaultProperty, defaultUmbrella, PortalData } from '@/data/seed';
-import type { AutoCoverages, BillingAccount, Claim, ClaimStatus, CommercialLine, Customer, Envelope, HomeCoverages, Lead, Payment, PaymentMethod, Policy, PolicyDocument, PolicyEndorsement, PolicyType, PremiumBreakdown, Quote, Toast } from '@/data/types';
+import type { AutoCoverages, BillingAccount, BusinessDetails, Claim, ClaimStatus, CommercialDetails, CommercialLine, ContractorsDetails, Customer, Envelope, HomeCoverages, Lead, Payment, PaymentMethod, Policy, PolicyDocument, PolicyEndorsement, PolicyType, PremiumBreakdown, Quote, Toast } from '@/data/types';
 
 const STORAGE_KEY = 'erie-agentexchange-demo-v1';
 
@@ -26,6 +26,14 @@ const clone = <T,>(value: T): T => JSON.parse(JSON.stringify(value)) as T;
 type LegacyAuto = AutoCoverages & { roadsideRentals?: boolean };
 export const migrateAuto = (a?: LegacyAuto): AutoCoverages | undefined => (a ? { ...a, emergencyRoadService: a.emergencyRoadService ?? !!a.roadsideRentals, transportationExpense: a.transportationExpense ?? !!a.roadsideRentals } : a);
 export const migrateHome = (h?: HomeCoverages): HomeCoverages | undefined => (h ? { ...h, otherStructuresPct: h.otherStructuresPct ?? 10, personalPropertyPct: h.personalPropertyPct ?? 70, lossOfUsePct: h.lossOfUsePct ?? 20 } : h);
+// Commercial class codes were corrected to verified ISO codes; new property and auto fields get defaults.
+const migrateBusiness = (b?: BusinessDetails): BusinessDetails | undefined => (b ? { ...defaultCommercial.business, ...b, classCode: LEGACY_CODES[b.classCode] ?? b.classCode } : b);
+const migrateContractors = (c?: ContractorsDetails): ContractorsDetails | undefined => (c && (c.codeVersion ?? 1) < 2 ? { ...c, trade: LEGACY_TRADES[c.trade] ?? c.trade, codeVersion: 2 } : c);
+const migrateCommercial = (c?: CommercialDetails): CommercialDetails => {
+  if (!c) return clone(defaultCommercial);
+  return { ...c, business: migrateBusiness(c.business)!, contractors: migrateContractors(c.contractors)!, umbrella: c.umbrella ?? { limit: 1000000 } };
+};
+
 const adjusters = [
   { name: 'Megan Reilly', phone: '(800) 367-3743 x4471', email: 'megan.reilly@erieinsurance.example' },
   { name: 'Carlos Medina', phone: '(800) 367-3743 x5120', email: 'carlos.medina@erieinsurance.example' },
@@ -63,8 +71,8 @@ function loadData(): PortalData {
       // Quotes saved before newer product lines existed get default details.
       return {
         ...data,
-        quotes: data.quotes.map((q) => ({ ...q, boat: q.boat ?? { ...defaultBoat }, life: q.life ?? { ...defaultLife }, umbrella: q.umbrella ?? { ...defaultUmbrella }, commercial: q.commercial ?? clone(defaultCommercial), autoCoverages: migrateAuto(q.autoCoverages)!, homeCoverages: migrateHome(q.homeCoverages)! })),
-        policies: data.policies.map((p) => ({ ...p, autoCoverages: migrateAuto(p.autoCoverages), homeCoverages: migrateHome(p.homeCoverages) })),
+        quotes: data.quotes.map((q) => ({ ...q, boat: q.boat ?? { ...defaultBoat }, life: q.life ?? { ...defaultLife }, umbrella: q.umbrella ?? { ...defaultUmbrella }, commercial: migrateCommercial(q.commercial), autoCoverages: migrateAuto(q.autoCoverages)!, homeCoverages: migrateHome(q.homeCoverages)! })),
+        policies: data.policies.map((p) => ({ ...p, autoCoverages: migrateAuto(p.autoCoverages), homeCoverages: migrateHome(p.homeCoverages), business: migrateBusiness(p.business), contractors: migrateContractors(p.contractors) })),
         claims: data.claims.map((c) => ({ ...c, status: LEGACY_CLAIM_STATUS[c.status as string] ?? c.status })),
         paymentMethods: data.paymentMethods ?? createSeed().paymentMethods,
         billing: applyScheduled(data.billing, data.policies),
@@ -112,8 +120,14 @@ export function rateCommercialLine(line: CommercialLine, quote: Quote): PremiumB
   const c = quote.commercial;
   const state = c.business.state || quote.applicant.state;
   if (line === 'bop') return rateBusiness({ ...c.business, state });
-  if (line === 'contractors') return rateContractors(c.contractors, c.business.revenue, state, c.business.glLimit);
+  if (line === 'contractors') return rateContractors(c.contractors, { ...c.business, state }, state);
   if (line === 'commercialAuto') return rateCommercialAuto(c.commercialAuto, state);
+  if (line === 'umbrella') {
+    // The umbrella is priced off the liability premium of the underlying lines on the account.
+    const underlying = c.lines.filter((l) => l !== 'umbrella').reduce((s, l) => s + liabilityPremium(rateCommercialLine(l, quote)), 0);
+    const heavy = c.lines.includes('commercialAuto') && c.commercialAuto.vehicles.some((v) => ['Heavy Truck', 'Extra-Heavy Truck', 'Truck-Tractor'].includes(v.bodyType));
+    return rateCommercialUmbrella(c.umbrella?.limit ?? 1000000, underlying, heavy, state);
+  }
   return rateWorkersComp(c.workersComp, state);
 }
 
@@ -278,6 +292,7 @@ export function PortalStoreProvider({ children }: { children: ReactNode }) {
       make('Business', 'commercial:contractors', { business: biz, contractors: quote.commercial.contractors, description: `Fivestar Contractors · ${biz.businessName}` });
       make('Commercial Auto', 'commercial:commercialAuto', { business: biz, commercialAuto: quote.commercial.commercialAuto, description: `Commercial Auto · ${quote.commercial.commercialAuto.vehicles.length} unit${quote.commercial.commercialAuto.vehicles.length === 1 ? '' : 's'} · ${biz.businessName}` });
       make('Workers Comp', 'commercial:workersComp', { business: biz, workersComp: quote.commercial.workersComp, description: `Workers' Compensation · E-Mod ${quote.commercial.workersComp.experienceMod.toFixed(2)} · ${biz.businessName}` });
+      make('Business', 'commercial:umbrella', { business: biz, policyForm: 'Commercial Umbrella', description: `Commercial Umbrella · $${(quote.commercial.umbrella?.limit ?? 1000000).toLocaleString()} · ${biz.businessName}` });
       make('Boat', 'boat', { boat: quote.boat, description: `${quote.boat.year} ${quote.boat.make} ${quote.boat.model} · ${quote.boat.length} ft · ${quote.boat.horsepower} HP` });
       make('Life', 'life', { life: quote.life, expiration: addYears(quote.effectiveDate, quote.life.term), status: quote.underwriting._approved === 'yes' ? 'Pending Issue' : 'Active', description: `ERIExpress Life · ${quote.life.term}-year term · $${quote.life.faceAmount.toLocaleString()} face` });
       const next: PortalData = {

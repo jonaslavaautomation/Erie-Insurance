@@ -5,7 +5,7 @@ import '@/product-page.css';
 import QuoteHeader from '@/components/QuoteHeader';
 import { Field, Modal, StatusBadge } from '@/components/ui';
 import { fullName, lineOf, rateQuote, today, usePortal } from '@/data/store';
-import { businessClasses, contractorTrades } from '@/data/commercial';
+import { commercialRules, commercialValidation } from '@/data/commercial';
 import { CommercialStep, umbrellaUnderlying, UmbrellaStep } from '@/pages/QuoteSteps';
 import { AGENT } from '@/data/seed';
 import { STATES } from '@/data/content';
@@ -61,18 +61,7 @@ function productReferrals(quote: Quote): { outcome: 'refer' | 'decline'; text: s
     if (bmi(quote.life.heightIn, quote.life.weightLb) >= 40) out.push({ outcome: 'refer', text: 'Build (BMI 40+) requires life underwriter review.' });
   }
   if (quote.products.includes('umbrella') && quote.umbrella.youthfulOperators > 2) out.push({ outcome: 'refer', text: 'More than two youthful operators on an umbrella requires underwriter review.' });
-  if (quote.products.includes('commercial')) {
-    const c = quote.commercial;
-    const cls = businessClasses.find((x) => x.code === c.business.classCode);
-    if (c.lines.includes('bop') && cls?.appetite === 'no') out.push({ outcome: 'decline', text: `${cls.label} is outside Ultrapack Plus appetite.` });
-    if (c.lines.includes('bop') && cls?.appetite === 'refer') out.push({ outcome: 'refer', text: `${cls.label}: ${cls.note}` });
-    const trade = contractorTrades.find((t) => t.code === c.contractors.trade);
-    if (c.lines.includes('contractors') && trade?.appetite === 'no') out.push({ outcome: 'decline', text: `${trade.label} is outside Fivestar Contractors appetite.` });
-    if (c.lines.includes('contractors') && (trade?.appetite === 'refer' || c.contractors.subcontractedPct > 50)) out.push({ outcome: 'refer', text: 'Contractors risk refers to commercial underwriting (trade class or more than 50% subcontracted).' });
-    if (c.lines.includes('commercialAuto') && c.commercialAuto.vehicles.some((v) => v.bodyType === 'Heavy Truck' && v.radius === 'Long Haul (200+ mi)')) out.push({ outcome: 'decline', text: 'Long-haul heavy trucking is outside Commercial Auto appetite.' });
-    if (c.lines.includes('commercialAuto') && c.commercialAuto.drivers.some((d) => d.violations + d.accidents >= 3)) out.push({ outcome: 'refer', text: 'A commercial driver has 3+ incidents — MVR review by underwriting.' });
-    if (c.lines.includes('workersComp') && c.workersComp.experienceMod > 1.25) out.push({ outcome: 'refer', text: `E-Mod ${c.workersComp.experienceMod.toFixed(2)} exceeds 1.25 — workers’ compensation refers to underwriting.` });
-  }
+  if (quote.products.includes('commercial')) out.push(...commercialRules(quote.commercial));
   return out;
 }
 
@@ -175,17 +164,7 @@ export default function QuoteWizard() {
       if (!check.autoOk) problems.push(`Umbrella underlying auto limits not met — ${check.autoText}. Required: 250/500/100 or 500 CSL.`);
       if (!check.homeOk) problems.push(`Umbrella underlying home liability not met — ${check.homeText}. Required: $300,000.`);
     }
-    if (target === 'commercial') {
-      const c = draft.commercial;
-      if (!c.business.businessName.trim()) problems.push('Enter the legal business name.');
-      if (!c.business.address.trim() || !/^\d{5}$/.test(c.business.zip)) problems.push('Enter the business location with a 5-digit ZIP.');
-      if (!c.lines.length) problems.push('Select at least one commercial line.');
-      if (c.lines.includes('bop') && !c.business.classCode) problems.push('Ultrapack Plus: select a business class.');
-      if (c.lines.includes('contractors') && !c.contractors.trade) problems.push('Fivestar Contractors: select the trade.');
-      if (c.lines.includes('commercialAuto') && (!c.commercialAuto.vehicles.length || !c.commercialAuto.drivers.length)) problems.push('Commercial Auto: add at least one vehicle and one driver.');
-      if (c.lines.includes('commercialAuto') && c.commercialAuto.drivers.some((d) => !d.name.trim())) problems.push('Commercial Auto: every driver needs a name for the MVR order.');
-      if (c.lines.includes('workersComp') && !c.workersComp.classes.some((x) => x.payroll > 0)) problems.push('Workers’ Comp: add at least one class code with payroll.');
-    }
+    if (target === 'commercial') problems.push(...commercialValidation(draft.commercial));
     if (target === 'boat') {
       const b = draft.boat;
       if (!b.make.trim() || !b.model.trim()) problems.push('Enter the boat make and model.');

@@ -546,6 +546,10 @@ button.record-alert:hover { background: #00508f; }
 .underlying { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin: 8px 0; padding: 10px 12px; border: 1px solid; font-size: 13px; }
 .underlying.ok { border-color: #b6dcc5; background: var(--good-bg); color: var(--good); }
 .underlying.bad { border-color: #f0b8b8; background: var(--bad-bg); color: var(--bad); }
+.underlying.refer { border-color: #e2a300; background: var(--warn-bg); color: var(--warn); }
+.table-scroll { overflow-x: auto; }
+.edit-table input.vin { min-width: 170px; font-family: ui-monospace, Consolas, monospace; text-transform: uppercase; }
+.edit-table input[type='checkbox'] { min-width: 0; height: auto; }
 .underlying span { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; color: var(--ink); }
 .plan-grid.five { grid-template-columns: repeat(5, minmax(0, 1fr)); }
 .plan-total { color: var(--ink-3); font-size: 11px; }

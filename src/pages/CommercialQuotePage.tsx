@@ -1,6 +1,6 @@
 import { FormEvent, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { Building2, HardHat, Truck } from 'lucide-react';
+import { Building2, HardHat, Truck, Umbrella } from 'lucide-react';
 import PortalLayout from '@/components/PortalLayout';
 import { Field, PageTitle, Panel } from '@/components/ui';
 import { commercialLineLabels } from '@/data/commercial';
@@ -18,7 +18,7 @@ export default function CommercialQuotePage() {
   const [lines, setLines] = useState<CommercialLine[]>(['bop']);
   const [errors, setErrors] = useState<string[]>([]);
   const set = (key: keyof typeof form, value: string) => setForm({ ...form, [key]: value });
-  const icons: Record<CommercialLine, JSX.Element> = { bop: <Building2 size={15} />, contractors: <HardHat size={15} />, commercialAuto: <Truck size={15} />, workersComp: <HardHat size={15} /> };
+  const icons: Record<CommercialLine, JSX.Element> = { bop: <Building2 size={15} />, contractors: <HardHat size={15} />, commercialAuto: <Truck size={15} />, workersComp: <HardHat size={15} />, umbrella: <Umbrella size={15} /> };
 
   const start = (event: FormEvent) => {
     event.preventDefault();
@@ -27,6 +27,7 @@ export default function CommercialQuotePage() {
     if (!form.businessName.trim()) problems.push('Enter the legal business name.');
     if (!form.address.trim() || !form.city.trim() || !/^\d{5}$/.test(form.zip)) problems.push('Enter the business location with a 5-digit ZIP.');
     if (!lines.length) problems.push('Select at least one commercial line.');
+    if (lines.includes('umbrella') && !lines.includes('bop') && !lines.includes('contractors')) problems.push('A commercial umbrella needs underlying general liability — add Ultrapack Plus or Fivestar Contractors.');
     setErrors(problems);
     if (problems.length) return;
     const quote = newQuoteDraft({ firstName: form.ownerFirst, middleName: '', lastName: form.ownerLast, address: form.address, city: form.city, state: form.state, zip: form.zip, dob: '', phone: '', email: '' });
@@ -39,7 +40,7 @@ export default function CommercialQuotePage() {
   };
 
   return <PortalLayout><main className="px-page narrow">
-    <PageTitle crumbs={[{ label: 'Commercial', to: '/products/eriesecure-business' }, { label: 'New commercial quote' }]} title="New Commercial Quote" subtitle="Ultrapack Plus, Fivestar Contractors, Commercial Auto and Workers’ Compensation rate together and share multi-policy credits." />
+    <PageTitle crumbs={[{ label: 'Commercial', to: '/products/eriesecure-business' }, { label: 'New commercial quote' }]} title="New Commercial Quote" subtitle="Ultrapack Plus, Fivestar Contractors, Commercial Auto, Workers’ Compensation and Commercial Umbrella rate together and share multi-policy credits." />
     <Panel>
       <form onSubmit={start} noValidate>
         <div className="px-grid3">

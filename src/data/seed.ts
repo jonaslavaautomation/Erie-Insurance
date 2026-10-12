@@ -98,10 +98,12 @@ export const defaultCommercial: CommercialDetails = {
     businessName: '', ownerFirst: '', ownerLast: '', entity: 'LLC', fein: '', yearsInBusiness: 3, classCode: '', description: '', revenue: 450000, payroll: 120000, employees: 4,
     address: '', city: '', state: 'WI', zip: '', phone: '', email: '', ownsBuilding: false, construction: 'Joisted Masonry', yearBuilt: 1990, squareFeet: 2400, sprinklered: false, alarm: 'None',
     buildingLimit: 0, bppLimit: 75000, glLimit: '1M/2M', propertyDeductible: 1000, cyber: false, epli: false, hiredNonOwnedAuto: false, equipmentBreakdown: false, employeeDishonesty: false,
+    protectionClass: 4, stories: 1, coinsurance: 90, valuation: 'Replacement Cost', windHailPct: 0, terrorism: true, priorCarrier: '', priorYears: 0, lossCount5yr: 0, lossIncurred5yr: 0,
   },
-  contractors: { trade: '', subcontractedPct: 10, equipmentFloater: 25000, installationFloater: 15000, toolsLimit: 5000, additionalInsuredBlanket: true },
-  commercialAuto: { vehicles: [], drivers: [], liability: '1,000,000 CSL', physicalDamageDeductible: 1000, garagekeepers: false, garagekeepersLimit: 50000, hiredNonOwned: false },
+  contractors: { trade: '', codeVersion: 2, subcontractedPct: 10, equipmentFloater: 25000, installationFloater: 15000, toolsLimit: 5000, additionalInsuredBlanket: true },
+  commercialAuto: { vehicles: [], drivers: [], liability: '1,000,000 CSL', uninsuredMotorist: '1,000,000 CSL', medicalPayments: 5000, physicalDamageDeductible: 1000, garagekeepers: false, garagekeepersLimit: 50000, hiredNonOwned: false },
   workersComp: { classes: [], experienceMod: 1, employersLiability: '500/500/500' },
+  umbrella: { limit: 1000000 },
 };
 
 export const defaultLife: LifeDetails = {
@@ -163,31 +165,32 @@ const delgadoBusiness: BusinessDetails = {
   description: 'Regional freight hauling, local delivery and warehouse leasing', revenue: 3800000, payroll: 1450000, employees: 22,
   address: '3100 Commerce Drive', city: 'Sun Prairie', state: 'WI', zip: '53590', phone: '(608) 555-0193', email: 'chris@delgadotransport.example',
   ownsBuilding: true, construction: 'Non-combustible', yearBuilt: 2004, squareFeet: 18000, sprinklered: true, alarm: 'Central Station',
-  buildingLimit: 2400000, bppLimit: 350000, glLimit: '2M/4M', propertyDeductible: 2500, cyber: false, epli: false, hiredNonOwnedAuto: false, equipmentBreakdown: true, employeeDishonesty: true,
+  buildingLimit: 3100000, bppLimit: 350000, glLimit: '2M/4M', propertyDeductible: 2500, cyber: false, epli: false, hiredNonOwnedAuto: false, equipmentBreakdown: true, employeeDishonesty: true,
+  protectionClass: 3, stories: 1, coinsurance: 90, valuation: 'Replacement Cost', windHailPct: 0, terrorism: true, priorCarrier: 'Society Insurance', priorYears: 6, lossCount5yr: 1, lossIncurred5yr: 8400,
 };
 const delgadoAuto: CommercialAutoDetails = {
   vehicles: [
-    { id: 'CV1', year: 2024, make: 'Ford', model: 'Transit 250', bodyType: 'Light Truck', costNew: 52000, radius: 'Local (0–50 mi)' },
-    { id: 'CV2', year: 2023, make: 'Ram', model: 'ProMaster 2500', bodyType: 'Light Truck', costNew: 48000, radius: 'Local (0–50 mi)' },
-    { id: 'CV3', year: 2022, make: 'Chevrolet', model: 'Silverado 2500HD', bodyType: 'Light Truck', costNew: 61000, radius: 'Intermediate (51–200 mi)' },
+    { id: 'CV1', year: 2024, make: 'Ford', model: 'Transit 250', bodyType: 'Light Truck', gvw: 9070, use: 'Commercial', vin: '1FTBR2C80RKA12345', costNew: 52000, radius: 'Local (0–50 mi)' },
+    { id: 'CV2', year: 2023, make: 'Ram', model: 'ProMaster 2500', bodyType: 'Light Truck', gvw: 8550, use: 'Commercial', vin: '3C6LRVBG5PE512345', costNew: 48000, radius: 'Local (0–50 mi)' },
+    { id: 'CV3', year: 2022, make: 'Chevrolet', model: 'Silverado 2500HD', bodyType: 'Medium Truck', gvw: 10950, use: 'Commercial', vin: '1GC4YNE76NF123456', costNew: 61000, radius: 'Intermediate (51–200 mi)' },
   ],
   drivers: [
-    { id: 'CD1', name: 'Chris Delgado', age: 51, violations: 0, accidents: 0 },
-    { id: 'CD2', name: 'Marco Ruiz', age: 34, violations: 0, accidents: 0 },
-    { id: 'CD3', name: 'Dana Kim', age: 27, violations: 1, accidents: 0 },
+    { id: 'CD1', name: 'Chris Delgado', age: 51, violations: 0, accidents: 0, cdl: false, yearsLicensed: 35 },
+    { id: 'CD2', name: 'Marco Ruiz', age: 34, violations: 0, accidents: 0, cdl: false, yearsLicensed: 18 },
+    { id: 'CD3', name: 'Dana Kim', age: 27, violations: 1, accidents: 0, cdl: false, yearsLicensed: 11 },
   ],
   liability: '1,000,000 CSL', physicalDamageDeductible: 1000, garagekeepers: false, garagekeepersLimit: 0, hiredNonOwned: true,
 };
 const delgadoTrucking: CommercialAutoDetails = {
   vehicles: [
-    { id: 'TR1', year: 2022, make: 'Freightliner', model: 'Cascadia 126', bodyType: 'Heavy Truck', costNew: 168000, radius: 'Intermediate (51–200 mi)' },
-    { id: 'TR2', year: 2020, make: 'Peterbilt', model: '579', bodyType: 'Heavy Truck', costNew: 152000, radius: 'Intermediate (51–200 mi)' },
-    { id: 'TR3', year: 2021, make: 'International', model: 'LT625', bodyType: 'Heavy Truck', costNew: 145000, radius: 'Intermediate (51–200 mi)' },
+    { id: 'TR1', year: 2022, make: 'Freightliner', model: 'Cascadia 126', bodyType: 'Truck-Tractor', gvw: 80000, use: 'Commercial', vin: '3AKJHHDR5NSNA1234', costNew: 168000, radius: 'Intermediate (51–200 mi)' },
+    { id: 'TR2', year: 2020, make: 'Peterbilt', model: '579', bodyType: 'Truck-Tractor', gvw: 80000, use: 'Commercial', vin: '1XPBDP9X5LD612345', costNew: 152000, radius: 'Intermediate (51–200 mi)' },
+    { id: 'TR3', year: 2021, make: 'International', model: 'LT625', bodyType: 'Truck-Tractor', gvw: 80000, use: 'Commercial', vin: '3HSDZAPR7MN712345', costNew: 145000, radius: 'Intermediate (51–200 mi)' },
   ],
   drivers: [
-    { id: 'TD1', name: 'Luis Ortega (CDL-A)', age: 46, violations: 0, accidents: 0 },
-    { id: 'TD2', name: 'Brenda Haskins (CDL-A)', age: 39, violations: 0, accidents: 0 },
-    { id: 'TD3', name: 'Terrence Cole (CDL-A)', age: 52, violations: 0, accidents: 1 },
+    { id: 'TD1', name: 'Luis Ortega', age: 46, violations: 0, accidents: 0, cdl: true, yearsLicensed: 24 },
+    { id: 'TD2', name: 'Brenda Haskins', age: 39, violations: 0, accidents: 0, cdl: true, yearsLicensed: 17 },
+    { id: 'TD3', name: 'Terrence Cole', age: 52, violations: 0, accidents: 1, cdl: true, yearsLicensed: 30 },
   ],
   liability: '1,000,000 CSL', physicalDamageDeductible: 1000, garagekeepers: false, garagekeepersLimit: 0, hiredNonOwned: false,
   trucking: { usdot: '3184427', mcNumber: 'MC-1092215', commodity: 'General freight — dry van', cargoLimit: 100000, trailerInterchange: true, trailers: 4 },

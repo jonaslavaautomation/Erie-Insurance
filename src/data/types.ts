@@ -155,6 +155,8 @@ export type UmbrellaDetails = {
 
 export type ContractorsDetails = {
   trade: string;
+  // 2 = verified ISO class codes; older saves used codes that were reassigned.
+  codeVersion?: number;
   subcontractedPct: number;
   equipmentFloater: number;
   installationFloater: number;
@@ -167,12 +169,19 @@ export type CommercialVehicle = {
   year: number;
   make: string;
   model: string;
-  bodyType: 'Private Passenger' | 'Light Truck' | 'Medium Truck' | 'Heavy Truck';
+  // ISO size class, derived from gross vehicle weight (truck-tractors are rated on combined weight).
+  bodyType: 'Private Passenger' | 'Light Truck' | 'Medium Truck' | 'Heavy Truck' | 'Extra-Heavy Truck' | 'Truck-Tractor';
   costNew: number;
+  // ISO radius classes: local up to 50 miles, intermediate 51–200, long distance over 200.
   radius: 'Local (0–50 mi)' | 'Intermediate (51–200 mi)' | 'Long Haul (200+ mi)';
+  vin?: string;
+  // Gross vehicle weight (or gross combination weight for truck-tractors), in pounds.
+  gvw?: number;
+  // ISO business use class.
+  use?: 'Service' | 'Retail' | 'Commercial';
 };
 
-export type CommercialDriver = { id: string; name: string; age: number; violations: number; accidents: number };
+export type CommercialDriver = { id: string; name: string; age: number; violations: number; accidents: number; cdl?: boolean; yearsLicensed?: number };
 
 export type TruckingDetails = { usdot: string; mcNumber: string; commodity: string; cargoLimit: number; trailerInterchange: boolean; trailers: number };
 
@@ -180,6 +189,8 @@ export type CommercialAutoDetails = {
   vehicles: CommercialVehicle[];
   drivers: CommercialDriver[];
   liability: '500,000 CSL' | '1,000,000 CSL';
+  uninsuredMotorist?: 'None' | '500,000 CSL' | '1,000,000 CSL';
+  medicalPayments?: number;
   physicalDamageDeductible: number;
   garagekeepers: boolean;
   garagekeepersLimit: number;
@@ -196,7 +207,7 @@ export type WorkersCompDetails = {
   employersLiability: '100/500/100' | '500/500/500' | '1M/1M/1M';
 };
 
-export type CommercialLine = 'bop' | 'contractors' | 'commercialAuto' | 'workersComp';
+export type CommercialLine = 'bop' | 'contractors' | 'commercialAuto' | 'workersComp' | 'umbrella';
 
 export type CommercialDetails = {
   lines: CommercialLine[];
@@ -204,6 +215,7 @@ export type CommercialDetails = {
   contractors: ContractorsDetails;
   commercialAuto: CommercialAutoDetails;
   workersComp: WorkersCompDetails;
+  umbrella?: { limit: number };
 };
 
 export type BusinessDetails = {
@@ -225,7 +237,8 @@ export type BusinessDetails = {
   phone: string;
   email: string;
   ownsBuilding: boolean;
-  construction: 'Frame' | 'Joisted Masonry' | 'Non-combustible' | 'Masonry Non-combustible' | 'Fire Resistive';
+  // ISO construction classes 1–6.
+  construction: 'Frame' | 'Joisted Masonry' | 'Non-combustible' | 'Masonry Non-combustible' | 'Modified Fire Resistive' | 'Fire Resistive';
   yearBuilt: number;
   squareFeet: number;
   sprinklered: boolean;
@@ -239,6 +252,19 @@ export type BusinessDetails = {
   hiredNonOwnedAuto: boolean;
   equipmentBreakdown: boolean;
   employeeDishonesty: boolean;
+  // Property rating and conditions.
+  protectionClass?: number;
+  stories?: number;
+  coinsurance?: 80 | 90 | 100;
+  valuation?: 'Replacement Cost' | 'Actual Cash Value';
+  windHailPct?: 0 | 1 | 2 | 5;
+  // Terrorism (TRIA) must be offered; the insured accepts or rejects it in writing.
+  terrorism?: boolean;
+  // Prior insurance and five-year loss history from loss runs.
+  priorCarrier?: string;
+  priorYears?: number;
+  lossCount5yr?: number;
+  lossIncurred5yr?: number;
 };
 
 export type PremiumLine = { label: string; amount: number };
@@ -321,7 +347,7 @@ export type Policy = {
   commercialAuto?: CommercialAutoDetails;
   workersComp?: WorkersCompDetails;
   // Distinguishes monoline commercial lines that share a policy type, e.g. Commercial Property vs. BOP.
-  policyForm?: 'Commercial Property' | 'Trucking';
+  policyForm?: 'Commercial Property' | 'Trucking' | 'Commercial Umbrella';
   mortgagees?: Mortgagee[];
   endorsements?: PolicyEndorsement[];
   description: string;

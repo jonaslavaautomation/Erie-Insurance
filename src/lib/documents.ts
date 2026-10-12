@@ -135,7 +135,9 @@ export function policyBreakdown(policy: Policy, state: string): PremiumBreakdown
   if (policy.type === 'Workers Comp' && policy.workersComp) return rateWorkersComp(policy.workersComp, state);
   if (policy.type === 'Business' && policy.business) {
     if (policy.policyForm === 'Commercial Property') return rateCommercialProperty(policy.business);
-    if (policy.contractors) return rateContractors(policy.contractors, policy.business.revenue, policy.business.state, policy.business.glLimit);
+    // The umbrella was priced off the account's underlying liability premium at issue.
+    if (policy.policyForm === 'Commercial Umbrella') return { product: 'Business', name: 'Commercial Umbrella', lines: [{ label: 'Excess liability over general liability, auto liability and employers liability', amount: policy.premium }], discounts: [], total: policy.premium };
+    if (policy.contractors) return rateContractors(policy.contractors, policy.business, policy.business.state);
     return rateBusiness(policy.business);
   }
   if (policy.type === 'Life' && policy.life) return rateLife(40, policy.life);
