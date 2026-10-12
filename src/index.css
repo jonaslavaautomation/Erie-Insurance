@@ -16,7 +16,7 @@ button, input, select { font: inherit; }
 button, a { -webkit-tap-highlight-color: transparent; }
 button { cursor: pointer; }
 
-.app-shell { min-height: 100vh; background: #F4F5F7; }
+.app-shell { min-height: calc(100vh / var(--zoom)); background: #F4F5F7; }
 .topbar { position: relative; background: #fff; border-bottom: 1px solid #d8d8d8; }
 .topbar-inner { height: 54px; max-width: 1060px; margin: 0 auto; display: flex; align-items: center; gap: 26px; }
 .brand { display: flex; align-items: center; min-width: 240px; height: 100%; color: #1479b8; }
@@ -43,7 +43,7 @@ button { cursor: pointer; }
 .nav-item { display: flex; align-items: center; gap: 7px; height: 100%; padding: 0 18px; border: 0; border-left: 1px solid transparent; background: transparent; color: #5d5d5d; font-size: 12px; white-space: nowrap; }
 .nav-item:hover { color: #087bbb; background: #f6f6f6; }
 .dashboard { padding: 31px 20px 60px; }
-.dashboard-grid { width: 1060px; margin: 0 auto; display: grid; grid-template-columns: repeat(4, 1fr); gap: 15px; align-items: start; }
+.dashboard-grid { width: min(1060px, 100%); margin: 0 auto; display: grid; grid-template-columns: repeat(4, 1fr); gap: 15px; align-items: start; }
 .portal-card { min-width: 0; background: white; border: 1px solid #d5d5d5; overflow: hidden; }
 .card-heading { height: 38px; padding: 0 15px; display: flex; align-items: center; color: white; background: #0877ad; font-size: 13px; font-weight: 700; }
 .card-heading.teal { background: #117F81; }
@@ -131,4 +131,12 @@ select { appearance: auto; color: #777; }
   .quote-card .card-body, .news-card .card-body { min-height: 0; }
   .news-card .card-body { padding-bottom: 62px; }
   .news-bottom { bottom: 18px; }
+}
+
+/* App-wide 125% zoom on desktop and tablet screens; phones keep 100% so layouts aren't squeezed.
+   --zoom lets viewport-height sizes divide it back out so full-height areas still fit the window. */
+:root { --zoom: 1; }
+@media screen and (min-width: 900px) {
+  :root { --zoom: 1.25; }
+  html { zoom: var(--zoom); }
 }

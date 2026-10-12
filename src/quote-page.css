@@ -1,4 +1,4 @@
-.quote-page { min-height: 100vh; background: #f4f5f7; color: #253342; font-family: Arial, Helvetica, sans-serif; }
+.quote-page { min-height: calc(100vh / var(--zoom)); background: #f4f5f7; color: #253342; font-family: Arial, Helvetica, sans-serif; }
 .quote-topbar { height: 64px; padding: 0 42px; display: flex; align-items: center; justify-content: space-between; background: #fff; border-bottom: 1px solid #d5dbe0; }
 .quote-brand { display: flex; align-items: center; gap: 8px; padding: 0; border: 0; background: transparent; color: #143f65; }
 .quote-erie-mark { width: 27px; height: 37px; display: grid; place-items: center; background: #006db6; color: #fff; font-size: 21px; }

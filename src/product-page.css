@@ -1,4 +1,4 @@
-.product-page { min-height: 100vh; background: #f4f5f7; color: #2e4356; font-family: Arial, Helvetica, sans-serif; }
+.product-page { min-height: calc(100vh / var(--zoom)); background: #f4f5f7; color: #2e4356; font-family: Arial, Helvetica, sans-serif; }
 .product-topbar { height: 61px; padding: 0 42px; display: flex; align-items: center; justify-content: space-between; background: #fff; border-bottom: 1px solid #d7dfe5; }
 .product-brand { display: flex; align-items: center; gap: 8px; border: 0; background: transparent; color: #163f63; font-size: 19px; text-align: left; }
 .product-brand > span:last-child { display: flex; flex-direction: column; line-height: 17px; }
