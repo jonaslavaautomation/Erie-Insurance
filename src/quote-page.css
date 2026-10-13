@@ -1,4 +1,4 @@
-.quote-page { min-height: calc(100vh / var(--zoom)); background: #f4f5f7; color: #253342; font-family: Arial, Helvetica, sans-serif; }
+.quote-page { min-height: calc(100vh / var(--zoom)); background: #f4f5f7; color: #253342; font-family: Montserrat, system-ui, sans-serif; }
 .quote-topbar { height: 64px; padding: 0 42px; display: flex; align-items: center; justify-content: space-between; background: #fff; border-bottom: 1px solid #d5dbe0; }
 .quote-brand { display: flex; align-items: center; gap: 8px; padding: 0; border: 0; background: transparent; color: #143f65; }
 .quote-erie-mark { width: 27px; height: 37px; display: grid; place-items: center; background: #006db6; color: #fff; font-size: 21px; }
@@ -86,3 +86,16 @@
   .disabled-action { padding: 0 10px; }
   .archive-link { font-size: 11px; }
 }
+
+/* Quote search results: one row per product, grouped by customer. */
+.quote-page button, .quote-page input, .quote-page select { font-family: inherit; }
+.qs-table-wrap { width: 100%; max-height: 420px; overflow: auto; padding: 0 10px 10px; }
+.qs-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.qs-table th { position: sticky; top: 0; z-index: 1; padding: 8px 10px; border-bottom: 1px solid #ccd3d9; background: #fff; color: #222; font-weight: 700; text-align: left; }
+.qs-table td { padding: 6px 10px; color: #333; vertical-align: top; }
+.qs-table tbody:nth-of-type(even) td { background: #eaf3fa; }
+.qs-table tbody.chosen td { background: #fdf9dc; }
+.qs-table .num { text-align: right; }
+.qs-table td.qs-customer { font-size: 13px; }
+.qs-link { padding: 0; border: 0; background: transparent; color: #0072bc; font-size: 13px; text-decoration: underline; }
+.empty-results:has(.qs-table-wrap) { display: block; min-height: 0; }

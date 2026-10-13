@@ -1,4 +1,4 @@
-.product-page { min-height: calc(100vh / var(--zoom)); background: #f4f5f7; color: #2e4356; font-family: Arial, Helvetica, sans-serif; }
+.product-page { min-height: calc(100vh / var(--zoom)); background: #f4f5f7; color: #2e4356; font-family: Montserrat, system-ui, sans-serif; }
 .product-topbar { height: 61px; padding: 0 42px; display: flex; align-items: center; justify-content: space-between; background: #fff; border-bottom: 1px solid #d7dfe5; }
 .product-brand { display: flex; align-items: center; gap: 8px; border: 0; background: transparent; color: #163f63; font-size: 19px; text-align: left; }
 .product-brand > span:last-child { display: flex; flex-direction: column; line-height: 17px; }
@@ -68,4 +68,28 @@
   .product-row-body { display: block; }
   .agent-label { display: block; margin-bottom: 6px; }
   .product-actions { align-items: flex-start; }
+}
+
+/* Product selection: agent, policy type, template and effective date per product. */
+.product-page button, .product-page input, .product-page select { font-family: inherit; }
+.product-row-header { min-height: 32px; font-size: 13px; }
+.product-row-body.two { display: grid; grid-template-columns: 1fr 1fr; padding-left: 0; }
+.product-row-body.two > .product-fields + .product-fields { border-left: 1px solid #e1e6ea; }
+.product-fields { display: flex; flex-direction: column; gap: 8px; }
+.product-field { display: grid; grid-template-columns: 220px auto; align-items: start; gap: 8px; }
+.product-field > label { padding-top: 8px; color: #222; font-size: 12px; font-weight: 700; text-align: right; }
+.product-field > label span { color: #cc3535; margin-right: 2px; }
+.product-row-body:not(.two) { padding-left: 0; }
+.product-row-body:not(.two) .product-fields { width: 50%; }
+.agent-control select.wide { width: 225px; }
+.agent-control small { display: block; margin-top: 2px; color: #777; font-size: 10px; }
+.date-with-icon { display: inline-flex; align-items: center; gap: 6px; color: #555; }
+.date-with-icon input { height: 32px; width: 150px; padding: 0 8px; border: 1px solid #aebbc5; border-radius: 2px; font-size: 13px; }
+.meter-mark { position: absolute; top: -3px; width: 2px; height: 15px; background: #768a95; }
+@media (max-width: 760px) {
+  .product-row-body.two { grid-template-columns: 1fr; }
+  .product-row-body.two > .product-fields + .product-fields { border-left: 0; }
+  .product-field { grid-template-columns: 1fr; }
+  .product-field > label { text-align: left; padding-top: 0; }
+  .product-row-body:not(.two) .product-fields { width: 100%; }
 }

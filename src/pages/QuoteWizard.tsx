@@ -14,6 +14,8 @@ import { loadTemplates, saveTemplates } from '@/lib/templates';
 import { validCardExpiry } from '@/lib/validation';
 import { downloadDocument, openDocument, quoteProposalHtml } from '@/lib/documents';
 import type { Driver, Policy, PremiumBreakdown, ProductKey, Quote, Vehicle } from '@/data/types';
+import PersonalQuote from '@/pages/pl/PersonalQuote';
+import { PL_STEPS, PlStep } from '@/lib/personalLines';
 
 type StepKey = 'underwriting' | 'drivers' | 'vehicles' | 'property' | 'coverages' | 'umbrella' | 'boat' | 'life' | 'commercial' | 'summary' | 'application' | 'issued';
 const stepLabels: Record<StepKey, string> = { underwriting: 'Customer Profile & Risk', drivers: 'Auto · Drivers', vehicles: 'Auto · Vehicles', property: 'Home · Property', coverages: 'Auto & Home Coverages', umbrella: 'Umbrella', boat: 'Boat', life: 'Life', commercial: 'Commercial Lines', summary: 'Summary & Bundle', application: 'Binder & Issue', issued: 'Issued' };
@@ -67,10 +69,12 @@ function productReferrals(quote: Quote): { outcome: 'refer' | 'decline'; text: s
 
 function stepsFor(quote: Quote): StepKey[] {
   const steps: StepKey[] = ['underwriting'];
-  if (quote.products.includes('auto')) steps.push('drivers', 'vehicles');
-  if (quote.products.includes('home')) steps.push('property');
-  if (quote.products.includes('auto') || quote.products.includes('home')) steps.push('coverages');
-  if (quote.products.includes('umbrella')) steps.push('umbrella');
+  // Personal lines quotes rate auto, home and umbrella on the quoting screens; the wizard handles the application.
+  const pl = quote.flow === 'pl';
+  if (quote.products.includes('auto') && !pl) steps.push('drivers', 'vehicles');
+  if (quote.products.includes('home') && !pl) steps.push('property');
+  if ((quote.products.includes('auto') || quote.products.includes('home')) && !pl) steps.push('coverages');
+  if (quote.products.includes('umbrella') && !pl) steps.push('umbrella');
   if (quote.products.includes('boat')) steps.push('boat');
   if (quote.products.includes('life')) steps.push('life');
   if (quote.products.includes('commercial')) steps.push('commercial');
@@ -123,7 +127,7 @@ export default function QuoteWizard() {
 
   // Named insured is always the first driver on an auto quote.
   useEffect(() => {
-    if (draft && step === 'drivers' && draft.drivers.length === 0) {
+    if (draft && draft.flow !== 'pl' && step === 'drivers' && draft.drivers.length === 0) {
       setDraft({ ...draft, drivers: [{ ...blankDriver(draft), id: 'D1', firstName: draft.applicant.firstName, dob: draft.applicant.dob, relationship: 'Named Insured', yearsLicensed: Math.max(0, ageFrom(draft.applicant.dob) - 16) }] });
     }
   }, [step, draft]);
@@ -134,11 +138,12 @@ export default function QuoteWizard() {
 
   if (!draft || !rated) return <div className="product-page"><QuoteHeader /><main className="product-main"><section className="product-card wizard-card"><h1>Quote not found</h1><p>This quote may have been deleted.</p><Link className="continue-action inline" to="/quotes">View all quotes</Link></section></main></div>;
 
+  const update = (patch: Partial<Quote> | ((q: Quote) => Partial<Quote>)) => setDraft((current) => (current ? { ...current, ...(typeof patch === 'function' ? patch(current) : patch), updatedAt: new Date().toISOString() } : current));
+  if (draft.flow === 'pl' && (PL_STEPS as string[]).includes(step)) return <PersonalQuote key={draft.id} quote={draft} step={step as PlStep} update={update} />;
   const steps = stepsFor(draft);
   const currentStep = (steps.includes(step as StepKey) ? step : 'underwriting') as StepKey;
   const index = steps.indexOf(currentStep);
   const visitedIndex = Math.max(steps.indexOf(draft.lastStep as StepKey), index);
-  const update = (patch: Partial<Quote>) => setDraft((current) => (current ? { ...current, ...patch } : current));
   const outcome = uwOutcome(draft);
   const total = rated.total;
 
@@ -278,7 +283,7 @@ export default function QuoteWizard() {
         </aside>}
       </div>
 
-      {currentStep !== 'issued' && <div className="product-actions"><button className="outline-action" type="button" onClick={() => { saveQuote(draft); navigate('/quotes'); }}>SAVE &amp; EXIT</button><div><button className="outline-action" type="button" onClick={() => (index === 0 ? navigate(`/quotes/select-products?${new URLSearchParams({ ...draft.applicant, ...(draft.customerId ? { customerId: draft.customerId } : {}) }).toString()}`) : goTo(steps[index - 1]))}>PREVIOUS</button>{currentStep === 'application' ? <button className="continue-action" type="button" onClick={bind}>BIND &amp; ISSUE</button> : <button className="continue-action" type="button" onClick={next}>CONTINUE</button>}</div></div>}
+      {currentStep !== 'issued' && <div className="product-actions"><button className="outline-action" type="button" onClick={() => { saveQuote(draft); navigate('/quotes'); }}>SAVE &amp; EXIT</button><div><button className="outline-action" type="button" onClick={() => (index === 0 && draft.flow === 'pl' ? navigate(`/quotes/${draft.id}/coverages`) : index === 0 ? navigate(`/quotes/select-products?${new URLSearchParams({ ...draft.applicant, ...(draft.customerId ? { customerId: draft.customerId } : {}) }).toString()}`) : goTo(steps[index - 1]))}>PREVIOUS</button>{currentStep === 'application' ? <button className="continue-action" type="button" onClick={bind}>BIND &amp; ISSUE</button> : <button className="continue-action" type="button" onClick={next}>CONTINUE</button>}</div></div>}
     </main>
   </div>;
 }

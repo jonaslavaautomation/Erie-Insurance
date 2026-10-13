@@ -3,12 +3,12 @@ import { Archive, ChevronDown, Info, Search } from 'lucide-react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import '@/quote-page.css';
 import QuoteHeader from '@/components/QuoteHeader';
-import { StatusBadge } from '@/components/ui';
-import { fullName, usePortal } from '@/data/store';
+import { fullName, lineOf, rateQuote, usePortal } from '@/data/store';
+import { quoteStatusLabel, usDate } from '@/lib/personalLines';
 import { STATES } from '@/data/content';
 import { ageOn, isRealDate } from '@/lib/validation';
 import { AGENT } from '@/data/seed';
-import type { Customer, QuoteStatus } from '@/data/types';
+import type { Customer, ProductKey, Quote, QuoteStatus } from '@/data/types';
 
 type QuoteForm = {
   suffix: string;
@@ -135,13 +135,36 @@ function QuoteSearchPage() {
         <h2>{showArchive ? 'Archived Quotes / Applications' : 'Search Quotes / Applications'}</h2>
         <div className="quote-search-controls"><div className="quote-filter-search"><Search size={16} /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Name or quote number" aria-label="Search quotes and applications" /></div><div className="quote-filters">{(Object.keys(filterOptions) as (keyof Filters)[]).map((key) => <div className="quote-filter" key={key}><button type="button" className={filters[key] !== 'Any' ? 'active' : ''} onClick={() => setOpenFilter(openFilter === key ? null : key)} aria-expanded={openFilter === key}>{filters[key] === 'Any' ? filterOptions[key].label : `${filterOptions[key].label}: ${filters[key]}`}<ChevronDown size={13} /></button>{openFilter === key && <div className="quote-filter-menu">{filterOptions[key].options.map((option) => <button type="button" key={option} className={filters[key] === option ? 'selected' : ''} onClick={() => { setFilters({ ...filters, [key]: option }); setOpenFilter(null); }}>{option}</button>)}</div>}</div>)}</div></div>
         <div className="empty-results">{!hasResults ? <strong>No results found</strong> : <div className="customer-results">
-          {matchingQuotes.map((quote) => <div className="customer-result quote-row" key={quote.id}><input type="checkbox" checked={selected.includes(quote.id)} onChange={() => toggleSelected(quote.id)} aria-label={`Select quote ${quote.id}`} /><button type="button" className="quote-row-main" onClick={() => navigate(quote.status === 'Issued' ? `/quotes/${quote.id}/issued` : `/quotes/${quote.id}/${quote.lastStep}`)}><span><strong>{quote.applicant.lastName}, {quote.applicant.firstName} · {quote.id}</strong><small>{quote.products.map((p) => p.toUpperCase()).join(' + ') || 'No products'} · Effective {quote.effectiveDate} · Updated {quote.updatedAt.slice(0, 10)}</small></span><StatusBadge status={quote.status} /><span className="result-action">{quote.status === 'Issued' ? 'VIEW' : 'RESUME'}</span></button></div>)}
+          {matchingQuotes.length > 0 && <div className="qs-table-wrap"><table className="qs-table"><thead><tr><th aria-label="Select" /><th>Customer</th><th>Product</th><th>Number</th><th>Agent</th><th>Status</th><th>Effective Date</th><th className="num">Premium</th></tr></thead>{matchingQuotes.map((quote) => <QuoteGroup key={quote.id} quote={quote} checked={selected.includes(quote.id)} onToggle={() => toggleSelected(quote.id)} onOpen={() => navigate(quote.status === 'Issued' ? `/quotes/${quote.id}/issued` : `/quotes/${quote.id}/${quote.lastStep}`)} />)}</table></div>}
           {matchingCustomers.map((customer) => <button className={`customer-result ${selectedCustomer === customer.id ? 'chosen' : ''}`} type="button" key={customer.id} onClick={() => selectCustomer(customer)}><span><strong>{customer.lastName}, {customer.firstName}{customer.middleName ? ` ${customer.middleName}` : ''} · Customer account</strong><small>{customer.address}, {customer.city}, {customer.state} {customer.zip}</small></span><span className="result-action">{selectedCustomer === customer.id ? 'SELECTED' : 'USE ACCOUNT'}</span></button>)}
         </div>}</div>
         <div className="quote-results-footer"><div><button className={visibleSelected.length ? 'outline-action' : 'disabled-action'} type="button" disabled={!visibleSelected.length} onClick={archiveSelected}>{showArchive ? 'RESTORE' : 'ARCHIVE'}</button><button className={visibleSelected.length ? 'outline-action danger' : 'disabled-action'} type="button" disabled={!visibleSelected.length} onClick={deleteSelected}>DELETE</button></div><button type="button" className="archive-link" onClick={() => { setShowArchive((v) => !v); setSelected([]); }}><Archive size={14} /> {showArchive ? 'Back to active quotes' : 'View Archive'}</button></div>
       </section>
     </main>
   </div>;
+}
+
+const productName: Record<ProductKey, string> = { auto: 'Auto', home: 'Home', umbrella: 'Umbrella', boat: 'Boat', life: 'Life', commercial: 'Commercial' };
+const cents = (n: number) => n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+/** One customer's quote: a row per product, as in the quote search results. */
+function QuoteGroup({ quote, checked, onToggle, onOpen }: { quote: Quote; checked: boolean; onToggle: () => void; onOpen: () => void }) {
+  const { policies } = usePortal();
+  const rated = quote.flow === 'pl' && !quote.pl?.rated ? null : rateQuote(quote, policies.filter((p) => p.customerId === quote.customerId));
+  const products = quote.products.length ? quote.products : (['auto'] as ProductKey[]);
+  return <tbody className={checked ? 'chosen' : ''}>{products.map((p, i) => {
+    const premium = rated ? (p === 'commercial' ? rated.lines.filter((l) => l.key.startsWith('commercial:')).reduce((s, l) => s + l.breakdown.total, 0) : lineOf(rated, p as never)?.total) : undefined;
+    return <tr key={p}>
+      {i === 0 && <td rowSpan={products.length}><input type="checkbox" checked={checked} onChange={onToggle} aria-label={`Select quote ${quote.id}`} /></td>}
+      {i === 0 && <td rowSpan={products.length} className="qs-customer">{quote.applicant.lastName.toUpperCase()}, {quote.applicant.firstName.toUpperCase()}</td>}
+      <td><button type="button" className="qs-link" onClick={onOpen}>{productName[p]}</button></td>
+      <td className="mono">{quote.numbers?.[p] ?? quote.id}</td>
+      <td>{quote.agentNumbers[p] ?? '--'}</td>
+      <td>{quoteStatusLabel(quote)}</td>
+      <td>{usDate(quote.effectiveDate)}</td>
+      <td className="num">{premium ? cents(premium) : '--'}</td>
+    </tr>;
+  })}</tbody>;
 }
 
 export default QuoteSearchPage;

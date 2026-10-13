@@ -67,7 +67,7 @@ function loadData(): PortalData {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (raw) {
       // Activity saved under the previous account owner is re-attributed to the current one.
-      const data = JSON.parse(raw.split('Vito Bitanghol').join(AGENT.name).split('Bitanghol Insurance Agency, LLC').join(AGENT.agency)) as PortalData;
+      const data = JSON.parse(raw.split('Guttenberg').join('Lindqvist').split('1968-07-14').join('1967-11-02').split('Vito Bitanghol').join(AGENT.name).split('Bitanghol Insurance Agency, LLC').join(AGENT.agency)) as PortalData;
       // Quotes saved before newer product lines existed get default details.
       return {
         ...data,
@@ -145,7 +145,7 @@ export function rateQuote(quote: Quote, existing: Policy[] = [], payPlan = quote
   const daysOut = (new Date(quote.effectiveDate).getTime() - Date.now()) / 86400000;
   const state = quote.applicant.state;
   const lines: { key: QuoteLineKey; breakdown: PremiumBreakdown }[] = [];
-  if (has('auto')) lines.push({ key: 'auto', breakdown: rateAuto(state, quote.drivers, quote.vehicles, quote.autoCoverages, { multiPolicy, payPlan, autoPay: quote.autoPay }) });
+  if (has('auto')) lines.push({ key: 'auto', breakdown: rateAuto(state, quote.drivers, quote.vehicles, quote.autoCoverages, { multiPolicy, payPlan, autoPay: quote.autoPay, ratingPlan: quote.pl?.ratingPlan }) });
   if (has('home')) lines.push({ key: 'home', breakdown: rateHome(state, quote.property, quote.homeCoverages, { multiPolicy, earlyQuote: daysOut >= 7, payPlan }) });
   if (has('umbrella')) lines.push({ key: 'umbrella', breakdown: rateUmbrella(state, quote.umbrella) });
   if (has('boat')) lines.push({ key: 'boat', breakdown: rateBoat(state, quote.boat, { multiPolicy: quote.products.length > 1 || others.length > 0, payPlan }) });

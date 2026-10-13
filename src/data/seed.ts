@@ -121,7 +121,7 @@ export const defaultLife: LifeDetails = {
 };
 
 const customers: Customer[] = [
-  { id: 'C-100231', firstName: 'David', middleName: '', lastName: 'Guttenberg', address: '509 Erie Insurance Way', city: 'Waunakee', state: 'WI', zip: '53597', dob: '1968-07-14', phone: '(608) 555-0187', email: 'd.guttenberg@example.com', customerSince: '2014-03-01' },
+  { id: 'C-100231', firstName: 'David', middleName: '', lastName: 'Lindqvist', address: '509 Erie Insurance Way', city: 'Waunakee', state: 'WI', zip: '53597', dob: '1967-11-02', phone: '(608) 555-0187', email: 'd.guttenberg@example.com', customerSince: '2014-03-01' },
   { id: 'C-100458', firstName: 'Maria', middleName: 'Elena', lastName: 'Johnson', address: '120 Lakeview Drive', city: 'Madison', state: 'WI', zip: '53703', dob: '1984-11-23', phone: '(608) 555-0119', email: 'maria.johnson@example.com', customerSince: '2019-06-15' },
   { id: 'C-100772', firstName: 'Robert', middleName: 'J', lastName: 'Kowalski', address: '88 Mill Pond Road', city: 'Waukesha', state: 'WI', zip: '53186', dob: '1957-02-09', phone: '(262) 555-0163', email: 'rkowalski@example.com', customerSince: '2008-09-10' },
   { id: 'C-101034', firstName: 'Aisha', middleName: '', lastName: 'Thompson', address: '4410 Cherokee Drive', city: 'Fitchburg', state: 'WI', zip: '53711', dob: '1991-05-30', phone: '(608) 555-0134', email: 'aisha.t@example.com', customerSince: '2022-01-20' },
@@ -197,7 +197,7 @@ const delgadoTrucking: CommercialAutoDetails = {
 };
 
 const policies: Policy[] = [
-  autoPolicy({ number: 'A05-2817734', type: 'Auto', customerId: 'C-100231', status: 'Active', effective: '2026-03-01', expiration: '2027-03-01', payPlan: 'Monthly', autoPay: true, agentNumber: 'Agent #10492', description: '2 vehicles · 2 drivers', drivers: [driver('D1', 'David', 'Guttenberg', '1968-07-14'), driver('D2', 'Karen', 'Guttenberg', '1970-04-02', { gender: 'F', relationship: 'Spouse' })], vehicles: [vehicle('V1', 2022, 'Subaru', 'Outback', '4S4BTANC5N3184471', { garagingZip: '53597' }), vehicle('V2', 2019, 'Ford', 'F-150', '1FTEW1E53KFA77210', { garagingZip: '53597', use: 'Pleasure' })], autoCoverages: { ...defaultAutoCoverages, autoPlus: true } }, true),
+  autoPolicy({ number: 'A05-2817734', type: 'Auto', customerId: 'C-100231', status: 'Active', effective: '2026-03-01', expiration: '2027-03-01', payPlan: 'Monthly', autoPay: true, agentNumber: 'Agent #10492', description: '2 vehicles · 2 drivers', drivers: [driver('D1', 'David', 'Lindqvist', '1967-11-02'), driver('D2', 'Karen', 'Lindqvist', '1970-04-02', { gender: 'F', relationship: 'Spouse' })], vehicles: [vehicle('V1', 2022, 'Subaru', 'Outback', '4S4BTANC5N3184471', { garagingZip: '53597' }), vehicle('V2', 2019, 'Ford', 'F-150', '1FTEW1E53KFA77210', { garagingZip: '53597', use: 'Pleasure' })], autoCoverages: { ...defaultAutoCoverages, autoPlus: true } }, true),
   homePolicy({ number: 'H07-1938842', type: 'Home', customerId: 'C-100231', status: 'Active', effective: '2026-03-01', expiration: '2027-03-01', payPlan: 'Annual', autoPay: false, agentNumber: 'Agent #10492', description: 'ErieSecure Home · 509 Erie Insurance Way', drivers: [], vehicles: [], property: { ...defaultProperty, yearBuilt: 1987, squareFeet: 2450 }, homeCoverages: { ...defaultHomeCoverages, dwelling: 385000, waterBackup: true } }, true),
   autoPolicy({ number: 'A05-3302915', type: 'Auto', customerId: 'C-100458', status: 'Active', effective: '2026-06-15', expiration: '2027-06-15', payPlan: 'Quarterly', autoPay: false, agentNumber: 'Agent #20941', description: '1 vehicle · 1 driver', drivers: [driver('D1', 'Maria', 'Johnson', '1984-11-23', { gender: 'F', maritalStatus: 'Single' })], vehicles: [vehicle('V1', 2024, 'Toyota', 'RAV4 Hybrid', '2T3RWRFV4RW210984')], autoCoverages: { ...defaultAutoCoverages, newAutoSecurity: true, emergencyRoadService: true, transportationExpense: true } }, false),
   simplePolicy({ number: 'L22-0045871', type: 'Life', customerId: 'C-100458', status: 'Active', effective: '2023-02-01', expiration: '2043-02-01', payPlan: 'Monthly', autoPay: true, agentNumber: 'Agent #20941', description: 'ERIE Lifetime Term · $500,000 face', drivers: [], vehicles: [], premium: 384 }),
@@ -344,8 +344,8 @@ kowalskiAuto.history = [{ date: '2026-09-25', text: `Notice of cancellation for 
 kowalskiAuto.documents = [{ name: 'Notice of Cancellation — Non-payment', date: '2026-09-25', kind: 'Notice' }, ...kowalskiAuto.documents];
 
 const paymentMethods: PaymentMethod[] = [
-  { id: 'PM-1001', customerId: 'C-100231', kind: 'ach', brand: 'Checking', last4: '4410', holder: 'David Guttenberg', bankName: 'Summit Prairie CU', isDefault: true },
-  { id: 'PM-1002', customerId: 'C-100231', kind: 'card', brand: 'Visa', last4: '2291', holder: 'David Guttenberg', expiry: '08/28', isDefault: false },
+  { id: 'PM-1001', customerId: 'C-100231', kind: 'ach', brand: 'Checking', last4: '4410', holder: 'David Lindqvist', bankName: 'Summit Prairie CU', isDefault: true },
+  { id: 'PM-1002', customerId: 'C-100231', kind: 'card', brand: 'Visa', last4: '2291', holder: 'David Lindqvist', expiry: '08/28', isDefault: false },
   { id: 'PM-1003', customerId: 'C-100772', kind: 'ach', brand: 'Savings', last4: '5508', holder: 'Robert Kowalski', bankName: 'First Federal', isDefault: true },
   { id: 'PM-1004', customerId: 'C-101533', kind: 'ach', brand: 'Checking', last4: '6621', holder: 'Linda Schaefer', bankName: 'Sun Prairie Bank', isDefault: true },
   { id: 'PM-1005', customerId: 'C-900101', kind: 'ach', brand: 'Checking', last4: '2210', holder: 'Taylor Morgan', bankName: 'Verona Community Bank', isDefault: true },

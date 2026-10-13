@@ -25,9 +25,10 @@ export type Driver = {
   firstName: string;
   lastName: string;
   dob: string;
-  gender: 'M' | 'F' | 'X';
-  maritalStatus: 'Single' | 'Married' | 'Widowed' | 'Divorced';
-  relationship: 'Named Insured' | 'Spouse' | 'Child' | 'Other Household';
+  // '' = not yet answered (household prefill records arrive incomplete).
+  gender: 'M' | 'F' | 'X' | '';
+  maritalStatus: 'Single' | 'Married' | 'Widowed' | 'Divorced' | '';
+  relationship: 'Named Insured' | 'Spouse' | 'Child' | 'Parent' | 'Other Relative' | 'Other Household' | '';
   licenseState: string;
   licenseNumber: string;
   yearsLicensed: number;
@@ -37,7 +38,28 @@ export type Driver = {
   goodStudent: boolean;
   // Named driver exclusion (form AU-220): listed on the policy but not rated or covered.
   excluded?: boolean;
+  // Personal lines quoting detail.
+  middleName?: string;
+  preferredName?: string;
+  suffix?: string;
+  driverType?: 'Insured Driver' | 'Excluded Driver' | 'Non-Driver';
+  taxId?: string;
+  taxIdType?: 'SSN' | 'ITIN';
+  differentNameOnLicense?: boolean;
+  // MM/YYYY
+  dateFirstLicensed?: string;
+  yearsInState?: '' | 'Less than 1 year' | '1 Year or more' | '3 Years or more' | '5 Years or more';
+  collegeStudentAway?: '' | 'yes' | 'no';
+  yourTurn?: boolean;
+  // Driver row status: reviewed and saved by the agent.
+  reviewed?: boolean;
+  taxIdVerified?: boolean;
+  dlnVerified?: boolean;
+  deceased?: boolean;
+  lifeTenant?: boolean;
 };
+
+export type VehicleCoverage = { include: boolean; medPay: string; comp: number; coll: number; roadside: string; autoSecurity: string };
 
 export type Vehicle = {
   id: string;
@@ -53,12 +75,28 @@ export type Vehicle = {
   antiLock: boolean;
   lienholder: string;
   reducedUsage: boolean;
+  // Personal lines quoting detail.
+  vehicleType?: 'Private Passenger' | 'Motorcycle' | 'Motorhome' | 'Trailer';
+  modelDetails?: string;
+  antiTheftDevice?: string;
+  primaryOperatorId?: string;
+  partTimeOperatorId?: string;
+  daysPerWeek?: number;
+  milesToWork?: number;
+  drivenYearRound?: boolean;
+  garagingAddress?: string;
+  registeredOwner?: string;
+  forceMultiCar?: boolean;
+  reviewed?: boolean;
+  coverage?: VehicleCoverage;
 };
 
 export type AutoCoverages = {
   bodilyInjury: string;
   propertyDamage: string;
   uninsuredMotorist: string;
+  // Shown separately on the coverages screen; defaults to the uninsured motorists limit.
+  underinsuredMotorist?: string;
   medicalPayments: string;
   comprehensiveDeductible: number;
   collisionDeductible: number;
@@ -72,7 +110,7 @@ export type AutoCoverages = {
 export type Property = {
   yearBuilt: number;
   squareFeet: number;
-  construction: 'Frame' | 'Masonry' | 'Masonry Veneer';
+  construction: 'Frame' | 'Masonry' | 'Masonry Veneer' | 'Fire Resistive' | '';
   roofType: 'Asphalt Shingle' | 'Metal' | 'Slate' | 'Tile';
   roofYear: number;
   stories: number;
@@ -82,6 +120,47 @@ export type Property = {
   burglarAlarm: boolean;
   sprinklers: boolean;
   dwellingType: 'Single Family' | 'Townhouse' | 'Condo' | 'Apartment' | 'Duplex';
+  // Personal lines dwelling detail.
+  swimmingPool?: boolean;
+  families?: number;
+  dwellingStyle?: string;
+  alarm?: 'None' | 'Local' | 'Central';
+  roofMaterial?: string;
+  lossSettlement?: string;
+  perils?: string;
+  roofWindHailSettlement?: 'Yes' | 'No';
+  ppLossSettlement?: string;
+  ppPerils?: string;
+  highValueVendor?: boolean;
+  mailDecToAgency?: boolean;
+};
+
+export type ReportRow = { id: string; driverId: string; name: string; driverType: string; report: string; date: string; status: string; lossDate: string; amount: number | null; detail: string };
+
+export type RatingPlan = 'Exchange' | 'Company' | 'ErieSecure Auto';
+
+// Personal lines quoting (Customer → Drivers → Vehicles → Dwelling → Reports → Coverages).
+export type PersonalLinesInfo = {
+  prefillDone: boolean;
+  secondNamedInsuredId: string;
+  mailing3Years: '' | 'yes' | 'no';
+  livesAtMailing: '' | 'yes' | 'no';
+  isPropertyLocation: '' | 'yes' | 'no';
+  county: string;
+  township: string;
+  autoCarrier: string;
+  autoYears: string;
+  priorBodilyInjury: string;
+  homeCarrier: string;
+  additionalPolicies: string[];
+  completed: string[];
+  reports: ReportRow[];
+  ratingPlan: RatingPlan;
+  rated: boolean;
+  ratedAt: string;
+  convert: ProductKey[];
+  // Insured location when it differs from the mailing address.
+  location?: { address: string; city: string; state: string; zip: string };
 };
 
 export type HomeForm = 'HO-3' | 'HO-4' | 'HO-6' | 'DP-3';
@@ -105,6 +184,7 @@ export type HomeCoverages = {
   form?: HomeForm;
   // Coverage C as a dollar amount for HO-4/HO-6, and landlord furnishings for DP-3.
   contentsLimit?: number;
+  windHailDeductible?: string;
 };
 
 export type BoatDetails = {
@@ -267,7 +347,8 @@ export type BusinessDetails = {
   lossIncurred5yr?: number;
 };
 
-export type PremiumLine = { label: string; amount: number };
+// ref: the vehicle (or other item) the line belongs to, for per-item display.
+export type PremiumLine = { label: string; amount: number; ref?: string };
 export type PremiumBreakdown = {
   product: PolicyType;
   // Display name, e.g. "ErieSecure Home®" or "Ultrapack Plus".
@@ -318,6 +399,13 @@ export type Quote = {
   lastStep: string;
   // Status before archiving, restored when the quote is un-archived.
   preArchiveStatus?: QuoteStatus;
+  // 'pl' = personal lines quoting screens (Customer, Drivers, Vehicles, Dwelling, Reports, Coverages).
+  flow?: 'pl';
+  // 10-digit quote number per product.
+  numbers?: Partial<Record<ProductKey, string>>;
+  templates?: Partial<Record<ProductKey, string>>;
+  homePolicyType?: string;
+  pl?: PersonalLinesInfo;
 };
 
 export type PolicyDocument = { name: string; date: string; kind: 'Declarations' | 'ID Card' | 'Application' | 'Endorsement' | 'Notice' | 'Bill' };

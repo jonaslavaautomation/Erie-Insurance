@@ -76,6 +76,10 @@ function header(docTitle: string, sub: string, company = COMPANIES.exchange) {
 const agentBlock = (p?: Policy) => `<div><span>Agent</span>${esc(AGENT.agency)}<br>${esc(AGENT.address)}<br>${esc(AGENT.phone)}${p ? ` · ${esc(p.agentNumber)}` : ''}</div>`;
 const insuredBlock = (c?: Customer, label = 'Named insured') => `<div><span>${label}</span>${esc(fullName(c))}<br>${esc(c?.address)}<br>${esc(c ? `${c.city}, ${c.state} ${c.zip}` : '')}</div>`;
 
+/** A plain printable page (prefill results, reports) with the standard letterhead. */
+export const simpleDocument = (title: string, sub: string, body: string) => shell(title, `<div class="sheet">${header(title, sub)}${body}</div>`);
+export { esc as escapeHtml };
+
 /** Opens a document in a new tab; falls back to downloading it when pop-ups are blocked. */
 export function openDocument(html: string, filename: string) {
   const win = window.open('', '_blank');
