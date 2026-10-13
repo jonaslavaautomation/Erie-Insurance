@@ -273,3 +273,7 @@
 .pl-limit-errors { margin: 0 0 10px; padding: 8px 12px; list-style: none; border: 1px solid #d0021b; background: #fbe6e6; color: #d0021b; font-size: 12px; }
 .pl-limit-errors li { display: flex; align-items: center; gap: 6px; padding: 2px 0; }
 .pl-kv > span { font-weight: 500; }
+
+.pl-table tbody tr.pl-note-row td { padding: 14px 0 0; background: #fff; }
+.pl-table tbody tr.pl-note-row .pl-prefill-note { margin: 0; }
+.pl-table tbody tr.pl-client-row td { background: #fff; }

@@ -132,6 +132,9 @@ function PrefillModal() {
   const [people, setPeople] = useState<Record<string, boolean>>({});
   const [named, setNamed] = useState<Record<string, boolean>>({});
   const [vehicles, setVehicles] = useState<Record<string, boolean>>({});
+  // The client as entered on the previous screen: included and named insured by default.
+  const [clientSel, setClientSel] = useState(true);
+  const [clientNamed, setClientNamed] = useState(true);
   const [error, setError] = useState('');
   const a = quote.applicant;
   const hasAuto = quote.products.includes('auto');
@@ -141,17 +144,27 @@ function PrefillModal() {
   const print = () => openDocument(simpleDocument('Prefill Results', `${a.lastName}, ${a.firstName} · ${mailingLine(quote)}`, `<h2>Drivers / Non-Drivers</h2><table><thead><tr><th>Name</th><th>Gender</th><th>Date of birth</th><th>License</th></tr></thead><tbody>${hh.people.map((p) => `<tr><td>${h(p.lastName)}, ${h(p.firstName)}</td><td>${p.gender === 'M' ? 'Male' : p.gender === 'F' ? 'Female' : '--'}</td><td>${maskDob(p.dob)}</td><td>${p.licenseNumber ? `${p.licenseState} ${maskTail(p.licenseNumber, 4)}` : '--'}</td></tr>`).join('')}</tbody></table>${hasAuto ? `<h2>Vehicles</h2><table><thead><tr><th>Year</th><th>Make</th><th>Model</th><th>Registered owner</th><th>VIN</th></tr></thead><tbody>${hh.vehicles.map((v) => `<tr><td>${v.year}</td><td>${v.make}</td><td>${v.model}</td><td>${h(v.registeredOwner)}</td><td>${v.vin}</td></tr>`).join('')}</tbody></table>` : ''}<p class="note">Mock prefill service — fictional household.</p>`), `prefill-${quote.id}`);
 
   const apply = () => {
-    const ni = hh.people.filter((p) => named[p.id] && p.id !== 'HH1');
-    if (ni.length > 1) { setError('Only one additional named insured can be selected.'); return; }
-    if (ni.some((p) => !people[p.id])) { setError('Select the person before marking them as a named insured.'); return; }
-    const client = hh.people[0];
-    const clientDriver = { ...driverFromPerson(client, quote, true), firstName: a.firstName, middleName: a.middleName, lastName: a.lastName, dob: a.dob, id: 'D-HH1' };
-    const others = hh.people.filter((p) => people[p.id] && p.id !== 'HH1').map((p) => driverFromPerson(p, quote, !!named[p.id]));
-    const drivers = [clientDriver, ...others];
+    const hh1 = hh.people[0];
+    const others = hh.people.filter((p) => p.id !== 'HH1');
+    if (others.some((p) => named[p.id] && !people[p.id]) || (named.HH1 && !people.HH1) || (clientNamed && !clientSel)) { setError('Select the person before marking them as a named insured.'); return; }
+    // The client can come from the row below (as entered) and/or their household record (adds license and tax ID).
+    const clientIn = clientSel || !!people.HH1;
+    const clientIsNamed = (clientSel && clientNamed) || (!!people.HH1 && !!named.HH1);
+    const clientDriver = clientIn ? { ...driverFromPerson(people.HH1 ? hh1 : { ...hh1, taxId: '', licenseNumber: '', gender: '' }, quote, true), id: 'D-HH1', firstName: a.firstName, middleName: a.middleName, lastName: a.lastName, dob: a.dob, relationship: clientIsNamed ? 'Named Insured' as const : '' as const } : null;
+    const chosen = others.filter((p) => people[p.id]).map((p) => ({ person: p, driver: driverFromPerson(p, quote, !!named[p.id]) }));
+    const namedList = [...(clientDriver && clientIsNamed ? [clientDriver] : []), ...chosen.filter((c) => named[c.person.id]).map((c) => c.driver)];
+    if (!clientDriver && !chosen.length) { setError('Select at least one driver or non-driver.'); return; }
+    if (!namedList.length) { setError('Select a Named Insured.'); return; }
+    if (namedList.length > 2) { setError('Select no more than two Named Insureds.'); return; }
+    // The first named insured leads the driver list; a second named insured is recorded on the quote.
+    const first = { ...namedList[0], relationship: 'Named Insured' as const };
+    const second = namedList[1] ? { ...namedList[1], relationship: 'Spouse' as const } : undefined;
+    const rest = [clientDriver, ...chosen.map((c) => c.driver)].filter((d): d is NonNullable<typeof d> => !!d && d.id !== first.id && d.id !== second?.id);
+    const drivers = [first, ...(second ? [second] : []), ...rest];
     const vs = hasAuto ? hh.vehicles.filter((v) => vehicles[v.id]).map((v) => vehicleFromHousehold(v, quote)) : [];
     busy('One Moment Please...', () => {
-      update({ drivers, vehicles: vs });
-      setPl({ prefillDone: true, secondNamedInsuredId: ni[0] ? `D-${ni[0].id}` : '' });
+      update((q) => ({ drivers, vehicles: vs, applicant: first.id === 'D-HH1' ? q.applicant : { ...q.applicant, firstName: first.firstName, middleName: first.middleName ?? '', lastName: first.lastName, dob: first.dob } }));
+      setPl({ prefillDone: true, secondNamedInsuredId: second?.id ?? '' });
       notify(`Prefill applied: ${drivers.length} household member${drivers.length === 1 ? '' : 's'}${hasAuto ? `, ${vs.length} vehicle${vs.length === 1 ? '' : 's'}` : ''}.`);
     }, 700);
   };
@@ -160,10 +173,11 @@ function PrefillModal() {
     <h3 className="pl-modal-h">Select Drivers/Non-Drivers <small>(Include all Household Occupants)</small></h3>
     <table className="pl-table compact">
       <thead><tr><th><input type="checkbox" aria-label="Select all household members" checked={allPeople} onChange={(e) => setPeople(Object.fromEntries(hh.people.map((p) => [p.id, e.target.checked])))} /></th><th>Name</th><th>Named Insured(s)</th><th>Gender</th><th>Date of Birth</th><th>Tax ID Number</th><th>License Info</th></tr></thead>
-      <tbody>{hh.people.map((p) => <tr key={p.id}><td><input type="checkbox" aria-label={`Select ${p.lastName}, ${p.firstName}`} checked={!!people[p.id]} onChange={(e) => setPeople({ ...people, [p.id]: e.target.checked })} /></td><td>{p.lastName}, {p.firstName}</td><td><input type="checkbox" aria-label={`Named insured ${p.lastName}, ${p.firstName}`} checked={!!named[p.id]} onChange={(e) => setNamed({ ...named, [p.id]: e.target.checked })} /></td><td>{p.gender === 'M' ? 'Male' : p.gender === 'F' ? 'Female' : '--'}</td><td>{maskDob(p.dob)}</td><td>{p.taxId ? `***-**-${p.taxId.slice(-4)}` : '--'}</td><td>{p.licenseNumber ? `${p.licenseState} ${p.licenseNumber.slice(0, 9)}****` : '--'}</td></tr>)}</tbody>
+      <tbody>{hh.people.map((p) => <tr key={p.id}><td><input type="checkbox" aria-label={`Select ${p.lastName}, ${p.firstName}`} checked={!!people[p.id]} onChange={(e) => setPeople({ ...people, [p.id]: e.target.checked })} /></td><td>{p.lastName}, {p.firstName}</td><td><input type="checkbox" aria-label={`Named insured ${p.lastName}, ${p.firstName}`} checked={!!named[p.id]} onChange={(e) => setNamed({ ...named, [p.id]: e.target.checked })} /></td><td>{p.gender === 'M' ? 'Male' : p.gender === 'F' ? 'Female' : '--'}</td><td>{maskDob(p.dob)}</td><td>{p.taxId ? `***-**-${p.taxId.slice(-4)}` : '--'}</td><td>{p.licenseNumber ? `${p.licenseState} ${p.licenseNumber.slice(0, 9)}****` : '--'}</td></tr>)}
+        <tr className="pl-note-row"><td colSpan={7}><div className="pl-prefill-note">Client Name listed below is from the previous screen. If name is not listed, select to include them as a Named Insured or Driver</div></td></tr>
+        <tr className="pl-client-row"><td><input type="checkbox" aria-label={`Select client ${a.lastName}, ${a.firstName}`} checked={clientSel} onChange={(e) => { setClientSel(e.target.checked); if (!e.target.checked) setClientNamed(false); setError(''); }} /></td><td>{a.lastName}, {a.firstName}</td><td><input type="checkbox" aria-label={`Named insured client ${a.lastName}, ${a.firstName}`} checked={clientNamed} onChange={(e) => { setClientNamed(e.target.checked); if (e.target.checked) setClientSel(true); setError(''); }} /></td><td>--</td><td>{maskDob(a.dob)}</td><td>--</td><td>--</td></tr>
+      </tbody>
     </table>
-    <div className="pl-prefill-note">Client Name listed below is from the previous screen. If name is not listed, select to include them as a Named Insured or Driver</div>
-    <table className="pl-table compact"><tbody><tr><td><input type="checkbox" checked readOnly aria-label="Client" /></td><td>{a.lastName}, {a.firstName}</td><td><input type="checkbox" checked readOnly aria-label="Client is named insured" /></td><td>--</td><td>{maskDob(a.dob)}</td><td>--</td><td>--</td></tr></tbody></table>
     {hasAuto && <>
       <h3 className="pl-modal-h">Select Vehicles</h3>
       <table className="pl-table compact">
