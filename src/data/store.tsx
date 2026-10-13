@@ -144,9 +144,11 @@ export function rateQuote(quote: Quote, existing: Policy[] = [], payPlan = quote
   const multiPolicy = (has('auto') || holds('Auto')) && (has('home') || holds('Home')) && (has('auto') || has('home'));
   const daysOut = (new Date(quote.effectiveDate).getTime() - Date.now()) / 86400000;
   const state = quote.applicant.state;
+  // Insurance score results from the Reports step feed the rating tier.
+  const scoreHit = (kind: 'Auto' | 'Property') => !!quote.pl?.reports.some((r) => r.report === `Insurance Score (${kind})` && r.status === 'Hit');
   const lines: { key: QuoteLineKey; breakdown: PremiumBreakdown }[] = [];
-  if (has('auto')) lines.push({ key: 'auto', breakdown: rateAuto(state, quote.drivers, quote.vehicles, quote.autoCoverages, { multiPolicy, payPlan, autoPay: quote.autoPay, ratingPlan: quote.pl?.ratingPlan }) });
-  if (has('home')) lines.push({ key: 'home', breakdown: rateHome(state, quote.property, quote.homeCoverages, { multiPolicy, earlyQuote: daysOut >= 7, payPlan }) });
+  if (has('auto')) lines.push({ key: 'auto', breakdown: rateAuto(state, quote.drivers, quote.vehicles, quote.autoCoverages, { multiPolicy, payPlan, autoPay: quote.autoPay, ratingPlan: quote.pl?.ratingPlan, context: { insuranceScoreHit: scoreHit('Auto'), priorCarrier: quote.pl?.autoCarrier, priorYears: quote.pl?.autoYears } }) });
+  if (has('home')) lines.push({ key: 'home', breakdown: rateHome(state, quote.property, quote.homeCoverages, { multiPolicy, earlyQuote: daysOut >= 7, payPlan, context: { insuranceScoreHit: scoreHit('Property'), propertyClaims: quote.pl?.reports.filter((r) => r.report.startsWith('Property Loss') && (r.amount ?? 0) > 0).length } }) });
   if (has('umbrella')) lines.push({ key: 'umbrella', breakdown: rateUmbrella(state, quote.umbrella) });
   if (has('boat')) lines.push({ key: 'boat', breakdown: rateBoat(state, quote.boat, { multiPolicy: quote.products.length > 1 || others.length > 0, payPlan }) });
   if (has('life')) lines.push({ key: 'life', breakdown: rateLife(ageFrom(quote.applicant.dob), quote.life) });

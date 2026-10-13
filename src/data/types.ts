@@ -97,6 +97,9 @@ export type AutoCoverages = {
   uninsuredMotorist: string;
   // Shown separately on the coverages screen; defaults to the uninsured motorists limit.
   underinsuredMotorist?: string;
+  // Pennsylvania tort election, and Maryland PIP waiver.
+  tort?: 'Full Tort' | 'Limited Tort';
+  pipWaived?: boolean;
   medicalPayments: string;
   comprehensiveDeductible: number;
   collisionDeductible: number;

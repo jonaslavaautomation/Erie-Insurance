@@ -1,4 +1,4 @@
-import type { AutoCoverages, Driver, PersonalLinesInfo, ProductKey, Property, Quote, ReportRow, Vehicle, VehicleCoverage } from '@/data/types';
+import type { AutoCoverages, Driver, HomeCoverages, PersonalLinesInfo, ProductKey, Property, Quote, ReportRow, Vehicle, VehicleCoverage } from '@/data/types';
 import { ageFrom } from '@/lib/rating';
 
 /*
@@ -153,28 +153,40 @@ export function vehicleErrors(v: Vehicle, drivers: Driver[]): Errors {
   return e;
 }
 
-export function dwellingErrors(p: Property, dwelling: number, osPct: number, ppPct: number, policyType?: string): Errors {
+export function dwellingErrors(p: Property, h: HomeCoverages, policyType?: string): Errors {
   const e: Errors = {};
   const year = new Date().getFullYear();
+  const form = h.form ?? 'HO-3';
   if (!policyType) e.policyType = 'Policy Type is required';
   if (!(p.yearBuilt >= 1800 && p.yearBuilt <= year)) e.yearBuilt = 'Year Built is required';
-  if (!(p.squareFeet >= 300)) e.squareFeet = 'Square Feet is required';
-  if (p.swimmingPool === undefined) e.swimmingPool = 'Swimming Pool is required';
   if (!p.construction) e.construction = 'Construction is required';
-  if (!p.dwellingStyle) e.dwellingStyle = 'Dwelling Style is required';
   if (!(p.stories > 0)) e.stories = 'Number of Stories is required';
   if (!p.alarm) e.alarm = 'Alarm System is required';
   if (p.sprinklers === undefined) e.sprinklers = 'Sprinkler System is required';
+  if (!p.ppLossSettlement) e.ppLossSettlement = 'Loss Settlement is required';
+  if (!p.ppPerils) e.ppPerils = 'Perils is required';
+  if (form === 'HO-4' || form === 'HO-6') {
+    if (!((h.contentsLimit ?? 0) >= 10000)) e.contents = 'Personal Property Amount is required (minimum $10,000)';
+    if (form === 'HO-6' && !(h.dwelling >= 5000)) e.dwelling = 'Building Additions & Alterations Amount is required (minimum $5,000)';
+    return e;
+  }
+  if (!(p.squareFeet >= 300)) e.squareFeet = 'Square Feet is required';
+  if (p.swimmingPool === undefined) e.swimmingPool = 'Swimming Pool is required';
+  if (!p.dwellingStyle) e.dwellingStyle = 'Dwelling Style is required';
   if (!(p.roofYear >= 1900 && p.roofYear <= year)) e.roofYear = 'Roof Installation Year is required';
   else if (p.yearBuilt && p.roofYear < p.yearBuilt) e.roofYear = 'Roof Installation Year cannot be before Year Built';
   if (!p.roofMaterial) e.roofMaterial = 'Roof Material is required';
   if (!p.lossSettlement) e.lossSettlement = 'Loss Settlement is required';
   if (!p.perils) e.perils = 'Perils is required';
-  if (!p.ppLossSettlement) e.ppLossSettlement = 'Loss Settlement is required';
-  if (!p.ppPerils) e.ppPerils = 'Perils is required';
-  if (!(dwelling >= 50000)) e.dwelling = 'Dwelling Amount is required';
-  if (!(osPct > 0)) e.otherStructures = 'Other Structures Amount is required';
-  if (!(ppPct > 0)) e.personalProperty = 'Personal Property Amount is required';
+  if (!(h.dwelling >= 50000)) e.dwelling = 'Dwelling Amount is required';
+  else if (p.squareFeet >= 300 && p.construction) {
+    // Insurance to value: guaranteed replacement cost needs 100% of the estimate; other settlements 80%.
+    const estimate = estimateDwelling(p);
+    if (p.lossSettlement === 'Guaranteed Replacement Cost' && h.dwelling < estimate) e.dwelling = `Guaranteed Replacement Cost requires the Dwelling Amount to be at least 100% of the Home Cost Estimator value ($${estimate.toLocaleString()})`;
+    else if (h.dwelling < estimate * 0.8) e.dwelling = `Dwelling Amount must be at least 80% of the estimated replacement cost ($${Math.round(estimate * 0.8).toLocaleString()})`;
+  }
+  if (!(h.otherStructuresPct > 0)) e.otherStructures = 'Other Structures Amount is required';
+  if (!(h.personalPropertyPct > 0)) e.personalProperty = 'Personal Property Amount is required';
   return e;
 }
 
@@ -204,7 +216,7 @@ export function stepComplete(q: Quote, step: PlStep): boolean {
   if (step === 'customer') return q.pl.completed.includes('customer') && !Object.keys(customerErrors(q)).length;
   if (step === 'drivers') return q.drivers.length > 0 && q.drivers.every((d, i) => d.reviewed && !Object.keys(driverErrors(d, i === 0)).length);
   if (step === 'vehicles') return q.vehicles.length > 0 && q.vehicles.every((v) => v.reviewed && !Object.keys(vehicleErrors(v, q.drivers)).length);
-  if (step === 'dwelling') return q.pl.completed.includes('dwelling') && !Object.keys(dwellingErrors(q.property, q.homeCoverages.dwelling, q.homeCoverages.otherStructuresPct, q.homeCoverages.personalPropertyPct, q.homePolicyType)).length;
+  if (step === 'dwelling') return q.pl.completed.includes('dwelling') && !Object.keys(dwellingErrors(q.property, q.homeCoverages, q.homePolicyType)).length;
   if (step === 'reports') return q.pl.rated;
   return q.pl.rated;
 }

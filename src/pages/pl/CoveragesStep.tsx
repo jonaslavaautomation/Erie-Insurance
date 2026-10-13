@@ -6,6 +6,7 @@ import { openDocument, quoteProposalHtml } from '@/lib/documents';
 import { AUTO_SECURITY_OPTIONS, ageFrom, BI_OPTIONS, installmentSchedule, money, PAY_PLANS, payPlanLabel, PD_OPTIONS, rateLife, ROADSIDE_OPTIONS, UM_OPTIONS } from '@/lib/rating';
 import { defaultVehicleCoverage, personName, underwritingScores, usDate } from '@/lib/personalLines';
 import { umbrellaUnderlying } from '@/pages/QuoteSteps';
+import { autoLimitErrors, meetsBi, pdThousands, ruleFor, splitLimit } from '@/lib/stateRules';
 import type { AutoCoverages, HomeCoverages, PayPlan, PremiumBreakdown, ProductKey, RatingPlan, Vehicle, VehicleCoverage } from '@/data/types';
 import { usePl } from '@/pages/pl/PersonalQuote';
 import { PlModal, Tip } from '@/pages/pl/PlUi';
@@ -43,6 +44,9 @@ export default function CoveragesStep() {
   const toApplication = () => {
     const chosen = convertable.filter((p) => convert.includes(p));
     if (!chosen.length) { setConvertError('Select at least one product to convert.'); return; }
+    const limitErrors = chosen.includes('auto') ? autoLimitErrors(quote.applicant.state, quote.autoCoverages) : [];
+    if (limitErrors.length) { setConvertError(limitErrors[0]); setTab('auto'); return; }
+    if (chosen.includes('home') && (quote.homeCoverages.form ?? 'HO-3') === 'HO-3' && quote.homeCoverages.personalLiability < 100000) { setConvertError('Home personal liability must be at least $100,000.'); setTab('home'); return; }
     if (chosen.includes('umbrella')) {
       const u = umbrellaUnderlying({ ...quote, products: quote.products.filter((p) => p !== 'auto' && p !== 'home' ? true : chosen.includes(p)) }, existing);
       if (!u.autoOk || !u.homeOk) { setConvertError(`Umbrella underlying limits not met — ${!u.autoOk ? 'auto requires 250/500 BI and 100,000 PD' : 'home requires $300,000 personal liability'}. Raise the limits or uncheck Umbrella.`); setTab('umbrella'); return; }
@@ -63,7 +67,7 @@ export default function CoveragesStep() {
         <section className="pl-card pl-cov-card">
           <div className="pl-cov-head">
             <label><span><span className="pl-req">*</span> Agent</span><select aria-label="Agent" value={quote.agentNumbers[tab] ?? ''} onChange={(e) => update((q) => ({ agentNumbers: { ...q.agentNumbers, [tab]: e.target.value } }))}>{AGENT.agentNumbers.map((a) => <option key={a}>{a}</option>)}</select></label>
-            <label><span><span className="pl-req">*</span> Effective</span><span className="pl-inline"><input aria-label="Effective date" type="date" value={quote.effectiveDate} min={new Date().toISOString().slice(0, 10)} onChange={(e) => e.target.value && change(() => update({ effectiveDate: e.target.value }))} /></span></label>
+            <label><span><span className="pl-req">*</span> Effective</span><span className="pl-inline"><input aria-label="Effective date" type="date" value={quote.effectiveDate} min={new Date().toISOString().slice(0, 10)} onChange={(e) => { const v = e.target.value; if (v) change(() => update({ effectiveDate: v })); }} /></span></label>
             {tab === 'auto' ? <label><span><span className="pl-req">*</span> Rating Plan</span><select aria-label="Rating Plan" value={pl.ratingPlan} onChange={(e) => { const v = e.target.value as RatingPlan; if (v === 'ErieSecure Auto') setPlanPending(v); else change(() => setPl({ ratingPlan: v })); }}><option>Exchange</option><option>Company</option><option>ErieSecure Auto</option></select></label>
               : <label><span>Policy Type</span><strong className="pl-cov-static">{tab === 'home' ? quote.homePolicyType ?? 'Home - Primary Residence' : 'Personal Catastrophe Liability'}</strong></label>}
             <div className="pl-pay"><span>Pay Plan</span><button type="button" className="pl-link" onClick={() => setPayOpen(true)}>{quote.payPlan} <ExternalLink size={12} /></button><small>{quote.autoPay ? 'AutoPay (EFT)' : 'Cash/Check/Card'}</small></div>
@@ -117,6 +121,10 @@ function AutoTab({ breakdown, change }: { breakdown: PremiumBreakdown | null | u
   const [discOpen, setDiscOpen] = useState<Record<string, boolean>>({});
   const a = quote.autoCoverages;
   const setA = (patch: Partial<AutoCoverages>) => change(() => update((q) => ({ autoCoverages: { ...q.autoCoverages, ...patch } })));
+  const rule = ruleFor(quote.applicant.state);
+  const limitErrors = autoLimitErrors(quote.applicant.state, a);
+  const [biPer, biAcc] = splitLimit(a.bodilyInjury);
+  const umFits = (o: string) => { const [x, y] = splitLimit(o); return x <= biPer && y <= biAcc && (!rule.umRequired || meetsBi(o, rule.umRequired)); };
   const setV = (id: string, patch: Partial<VehicleCoverage>) => change(() => update((q) => ({ vehicles: q.vehicles.map((v) => (v.id === id ? { ...v, coverage: { ...(v.coverage ?? defaultVehicleCoverage()), ...patch } } : v)) })));
   if (!breakdown) return null;
 
@@ -135,17 +143,21 @@ function AutoTab({ breakdown, change }: { breakdown: PremiumBreakdown | null | u
     <PolicyBar title="Policy Level Coverages" />
     <div className="pl-policy-cards">
       <div className="pl-mini-card"><h4>Liability</h4>
-        <div className="pl-kv"><label htmlFor="bi">Bodily Injury</label><select id="bi" value={a.bodilyInjury} onChange={(e) => setA({ bodilyInjury: e.target.value })}>{BI_OPTIONS.map((o) => <option key={o} value={o}>{limitLabel(o)}</option>)}</select></div>
-        <div className="pl-kv"><label htmlFor="pd">Property Damage</label><select id="pd" value={a.propertyDamage} onChange={(e) => setA({ propertyDamage: e.target.value })}>{PD_OPTIONS.map((o) => <option key={o} value={o}>{o}</option>)}</select></div>
+        <div className="pl-kv"><label htmlFor="bi">Bodily Injury</label><select id="bi" value={a.bodilyInjury} onChange={(e) => setA({ bodilyInjury: e.target.value })}>{BI_OPTIONS.filter((o) => meetsBi(o, rule.bi) || o === a.bodilyInjury).map((o) => <option key={o} value={o}>{limitLabel(o)}</option>)}</select></div>
+        <div className="pl-kv"><label htmlFor="pd">Property Damage</label><select id="pd" value={a.propertyDamage} onChange={(e) => setA({ propertyDamage: e.target.value })}>{PD_OPTIONS.filter((o) => pdThousands(o) >= rule.pd || o === a.propertyDamage).map((o) => <option key={o} value={o}>{o}</option>)}</select></div>
       </div>
       <div className="pl-mini-card"><h4>Uninsured Motorists</h4>
-        <div className="pl-kv"><label htmlFor="um">Bodily Injury</label><select id="um" value={a.uninsuredMotorist} onChange={(e) => setA({ uninsuredMotorist: e.target.value })}>{UM_OPTIONS.map((o) => <option key={o} value={o}>{limitLabel(o)}</option>)}</select></div>
+        <div className="pl-kv"><label htmlFor="um">Bodily Injury</label><select id="um" value={a.uninsuredMotorist} onChange={(e) => setA({ uninsuredMotorist: e.target.value })}>{UM_OPTIONS.filter((o) => umFits(o) || o === a.uninsuredMotorist).map((o) => <option key={o} value={o}>{limitLabel(o)}</option>)}</select></div>
         <h4>Underinsured Motorists</h4>
-        <div className="pl-kv"><label htmlFor="uim">Bodily Injury</label><select id="uim" value={a.underinsuredMotorist ?? a.uninsuredMotorist} onChange={(e) => setA({ underinsuredMotorist: e.target.value })}>{UM_OPTIONS.map((o) => <option key={o} value={o}>{limitLabel(o)}</option>)}</select></div>
+        <div className="pl-kv"><label htmlFor="uim">Bodily Injury</label><select id="uim" value={a.underinsuredMotorist ?? a.uninsuredMotorist} onChange={(e) => setA({ underinsuredMotorist: e.target.value })}>{UM_OPTIONS.filter((o) => umFits(o) || o === (a.underinsuredMotorist ?? a.uninsuredMotorist)).map((o) => <option key={o} value={o}>{limitLabel(o)}</option>)}</select></div>
         <h4>Other</h4>
+        {rule.tortOption && <div className="pl-kv"><label htmlFor="tort">Tort Option</label><select id="tort" value={a.tort ?? 'Full Tort'} onChange={(e) => setA({ tort: e.target.value as AutoCoverages['tort'] })}><option>Full Tort</option><option>Limited Tort</option></select></div>}
+        {rule.firstParty && <div className="pl-kv"><label>{rule.firstParty.label.split(' — ')[0]}</label>{rule.firstParty.waivable ? <select aria-label="PIP" value={a.pipWaived ? 'Waived' : 'Included'} onChange={(e) => setA({ pipWaived: e.target.value === 'Waived' })}><option>Included</option><option>Waived</option></select> : <span>${rule.firstParty.amount.toLocaleString()} (required)</span>}</div>}
         <div className="pl-kv"><label htmlFor="ap">ERIE Auto Plus</label><select id="ap" value={a.autoPlus ? 'Yes' : 'No'} onChange={(e) => setA({ autoPlus: e.target.value === 'Yes' })}><option>Yes</option><option>No</option></select></div>
       </div>
     </div>
+    <div className="pl-state-note">{rule.name} minimums: liability {rule.bi[0]}/{rule.bi[1]}/{rule.pd}{rule.umRequired ? ` · uninsured motorists ${rule.umRequired[0]}/${rule.umRequired[1]} required` : ' · uninsured motorists must be offered'}{rule.uimRequired ? ' · underinsured motorists required' : ''}{rule.firstParty ? ` · ${rule.firstParty.label}${rule.firstParty.waivable ? ' (may be waived)' : ' required'}` : ''}{rule.medPayDefault ? ` · ${rule.medPayDefault} medical payments included unless rejected` : ''}.</div>
+    {limitErrors.length > 0 && <ul className="pl-limit-errors" role="alert">{limitErrors.map((e) => <li key={e}><XCircle size={13} /> {e}</li>)}</ul>}
     <PolicyBar title="Vehicle Level Coverages" right={<><strong>{pl.ratingPlan === 'ErieSecure Auto' ? 'ErieSecure Auto' : `${pl.ratingPlan} Auto`}</strong><span>{dollars(breakdown.total)}</span></>} />
     {quote.vehicles.map((v, i) => {
       const cov = v.coverage ?? defaultVehicleCoverage();
@@ -156,7 +168,7 @@ function AutoTab({ breakdown, change }: { breakdown: PremiumBreakdown | null | u
         <div className="pl-vehicle-head"><strong>{v.year} {v.make} {v.model}</strong>{op && <span> ({personName(op)})</span>}<em>{dollars(vehicleTotals[i])}</em></div>
         <div className="pl-collapse-row"><button type="button" className="pl-link" onClick={() => setClosed({ ...closed, [v.id]: !closed[v.id] })}>{closed[v.id] ? <PlusSquare size={12} /> : <MinusSquare size={12} />} Policy Coverages</button><span className="pl-yesno"><label><input type="radio" name={`inc-${v.id}`} checked={cov.include} onChange={() => setV(v.id, { include: true })} /> Include</label><label><input type="radio" name={`inc-${v.id}`} checked={!cov.include} onChange={() => setV(v.id, { include: false })} /> Exclude</label></span></div>
         {!closed[v.id] && <div className="pl-cov-rows">
-          <CovRow label="Medical Payments" price={dollars(net(lineFor(v, /Medical/)?.amount) ?? 0)}>{i === 0 ? <select aria-label="Medical Payments" value={cov.medPay} onChange={(e) => change(() => update((q) => ({ vehicles: q.vehicles.map((x) => ({ ...x, coverage: { ...(x.coverage ?? defaultVehicleCoverage()), medPay: e.target.value } })) })))}>{['None', '1,000', '5,000', '10,000'].map((o) => <option key={o}>{o}</option>)}</select> : <span>{cov.medPay}</span>}</CovRow>
+          <CovRow label="Medical Payments" price={dollars(net(lineFor(v, /Medical/)?.amount) ?? 0)}>{i === 0 ? <select aria-label="Medical Payments" value={cov.medPay} onChange={(e) => { const v = e.target.value; change(() => update((q) => ({ vehicles: q.vehicles.map((x) => ({ ...x, coverage: { ...(x.coverage ?? defaultVehicleCoverage()), medPay: v } })) }))); }}>{['None', '1,000', '5,000', '10,000'].map((o) => <option key={o}>{o}</option>)}</select> : <span>{cov.medPay}</span>}</CovRow>
           {cov.include ? <>
             <CovRow label="Comprehensive" price={dollars(net(lineFor(v, /Comprehensive/)?.amount) ?? 0)}><select aria-label={`Comprehensive ${v.make}`} value={cov.comp} onChange={(e) => setV(v.id, { comp: Number(e.target.value) })}>{[100, 250, 500, 1000].map((d) => <option key={d} value={d}>{d} Deductible</option>)}</select></CovRow>
             <CovRow label="Collision" price={dollars(net(lineFor(v, /Collision/)?.amount) ?? 0)}><select aria-label={`Collision ${v.make}`} value={cov.coll} onChange={(e) => setV(v.id, { coll: Number(e.target.value) })}>{[250, 500, 1000].map((d) => <option key={d} value={d}>{d} Deductible</option>)}</select></CovRow>
@@ -184,17 +196,23 @@ function HomeTab({ breakdown, change }: { breakdown: PremiumBreakdown | null | u
   const factor = breakdown.total / gross;
   const price = (re: RegExp) => { const l = breakdown.lines.find((x) => re.test(x.label)); return l ? dollars(Math.round(l.amount * factor)) : '--'; };
   const amt = (pct: number) => Math.round((h.dwelling * pct) / 100);
+  const form = h.form ?? 'HO-3';
   return <>
     <PolicyBar title="Property Coverages" right={<><strong>{breakdown.name}</strong><span>{dollars(breakdown.total)}</span></>} />
     <div className="pl-cov-rows">
+      {form === 'HO-3' ? <>
       <CovRow label="Dwelling (Coverage A)" price={price(/Coverage A/)}><span className="pl-inline"><span className="pl-dollar">$</span><input aria-label="Coverage A" className="amount" value={h.dwelling.toLocaleString()} onChange={(e) => update((q) => ({ homeCoverages: { ...q.homeCoverages, dwelling: Number(e.target.value.replace(/\D/g, '')) } }))} onBlur={() => change(() => undefined)} /></span></CovRow>
       <CovRow label="Other Structures (Coverage B)" price={price(/Coverage B/)}><select aria-label="Coverage B" value={Math.round(h.otherStructuresPct)} onChange={(e) => setH({ otherStructuresPct: Number(e.target.value) })}>{[...new Set([10, 15, 20, 25, Math.round(h.otherStructuresPct)])].sort((x, y) => x - y).map((p) => <option key={p} value={p}>{p}% — ${amt(p).toLocaleString()}</option>)}</select></CovRow>
       <CovRow label="Personal Property (Coverage C)" price={price(/Coverage C/)}><select aria-label="Coverage C" value={Math.round(h.personalPropertyPct)} onChange={(e) => setH({ personalPropertyPct: Number(e.target.value) })}>{[...new Set([50, 60, 70, 75, Math.round(h.personalPropertyPct)])].sort((x, y) => x - y).map((p) => <option key={p} value={p}>{p}% — ${amt(p).toLocaleString()}</option>)}</select></CovRow>
-      <CovRow label="Loss of Use (Coverage D)" price={price(/Coverage D/)}><select aria-label="Coverage D" value={h.lossOfUsePct} onChange={(e) => setH({ lossOfUsePct: Number(e.target.value) })}>{[20, 30].map((p) => <option key={p} value={p}>{p}% — ${amt(p).toLocaleString()}</option>)}</select></CovRow>
+      </> : <>
+        {form === 'HO-6' && <CovRow label="Building Additions & Alterations (Coverage A)" price={price(/Coverage A/)}><span className="pl-inline"><span className="pl-dollar">$</span><input aria-label="Coverage A" className="amount" value={h.dwelling.toLocaleString()} onChange={(e) => update((q) => ({ homeCoverages: { ...q.homeCoverages, dwelling: Number(e.target.value.replace(/\D/g, '')) } }))} onBlur={() => change(() => undefined)} /></span></CovRow>}
+        <CovRow label="Personal Property (Coverage C)" price={price(/Coverage C/)}><span className="pl-inline"><span className="pl-dollar">$</span><input aria-label="Coverage C amount" className="amount" value={(h.contentsLimit ?? 0).toLocaleString()} onChange={(e) => update((q) => ({ homeCoverages: { ...q.homeCoverages, contentsLimit: Number(e.target.value.replace(/\D/g, '')) } }))} onBlur={() => change(() => undefined)} /></span></CovRow>
+      </>}
+      {form === 'HO-3' && <CovRow label="Loss of Use (Coverage D)" price={price(/Coverage D/)}><select aria-label="Coverage D" value={h.lossOfUsePct} onChange={(e) => setH({ lossOfUsePct: Number(e.target.value) })}>{[20, 30].map((p) => <option key={p} value={p}>{p}% — ${amt(p).toLocaleString()}</option>)}</select></CovRow>}
       <CovRow label="Personal Liability" price={price(/Coverage E/)}><select aria-label="Personal Liability" value={h.personalLiability} onChange={(e) => setH({ personalLiability: Number(e.target.value) })}>{[100000, 300000, 500000, 1000000].map((o) => <option key={o} value={o}>{o.toLocaleString()}</option>)}</select></CovRow>
       <CovRow label="Medical Payments to Others" price={price(/Coverage F/)}><select aria-label="Medical Payments to Others" value={h.medicalPayments} onChange={(e) => setH({ medicalPayments: Number(e.target.value) })}>{[1000, 2000, 5000].map((o) => <option key={o} value={o}>{o.toLocaleString()}</option>)}</select></CovRow>
       <CovRow label="All-Peril Deductible"><select aria-label="All-Peril Deductible" value={h.deductible} onChange={(e) => setH({ deductible: Number(e.target.value) })}>{[500, 1000, 2500, 5000].map((o) => <option key={o} value={o}>{o.toLocaleString()} Deductible</option>)}</select></CovRow>
-      <CovRow label="Wind/Hail Deductible" price={h.windHailDeductible && h.windHailDeductible !== 'Same as All-Peril' ? price(/Wind\/hail/) : '--'}><select aria-label="Wind/Hail Deductible" value={h.windHailDeductible ?? 'Same as All-Peril'} onChange={(e) => setH({ windHailDeductible: e.target.value })}>{['Same as All-Peril', '1% of Dwelling', '2% of Dwelling'].map((o) => <option key={o}>{o}</option>)}</select></CovRow>
+      {form === 'HO-3' && <CovRow label="Wind/Hail Deductible" price={h.windHailDeductible && h.windHailDeductible !== 'Same as All-Peril' ? price(/Wind\/hail/) : '--'}><select aria-label="Wind/Hail Deductible" value={h.windHailDeductible ?? 'Same as All-Peril'} onChange={(e) => setH({ windHailDeductible: e.target.value })}>{['Same as All-Peril', '1% of Dwelling', '2% of Dwelling'].map((o) => <option key={o}>{o}</option>)}</select></CovRow>}
     </div>
     <PolicyBar title="Optional Endorsements" />
     <div className="pl-cov-rows">
@@ -213,14 +231,19 @@ function UmbrellaTab({ breakdown, change }: { breakdown: PremiumBreakdown | null
   return <>
     <PolicyBar title="Personal Catastrophe Liability" right={<><strong>Umbrella</strong><span>{dollars(breakdown.total)}</span></>} />
     <div className="pl-cov-rows">
-      <CovRow label="Limit" price={dollars(breakdown.lines[0]?.amount ?? 0)}><select aria-label="Umbrella Limit" value={u.limit} onChange={(e) => change(() => update((q) => ({ umbrella: { ...q.umbrella, limit: Number(e.target.value) } })))}>{[1, 2, 3, 4, 5].map((m) => <option key={m} value={m * 1000000}>{(m * 1000000).toLocaleString()}</option>)}</select></CovRow>
+      <CovRow label="Limit" price={dollars(breakdown.lines[0]?.amount ?? 0)}><select aria-label="Umbrella Limit" value={u.limit} onChange={(e) => { const v = Number(e.target.value); change(() => update((q) => ({ umbrella: { ...q.umbrella, limit: v } }))); }}>{[1, 2, 3, 4, 5].map((m) => <option key={m} value={m * 1000000}>{(m * 1000000).toLocaleString()}</option>)}</select></CovRow>
       {breakdown.lines.slice(1).map((l) => <CovRow key={l.label} label={l.label} price={dollars(l.amount)}><span>Included</span></CovRow>)}
     </div>
     <PolicyBar title="Underlying Policies" />
     <div className="pl-cov-rows">
       <CovRow label={<span className="pl-inline"><Status ok={check.autoOk} /> Auto — 250/500 BI, 100,000 PD required</span>}><span className="pl-stack"><span>{check.autoText}</span>{!check.autoOk && check.autoSource === 'quote' && <button type="button" className="pl-btn outline small" onClick={() => change(() => update((q) => ({ autoCoverages: { ...q.autoCoverages, bodilyInjury: '250/500', propertyDamage: '100,000' } })))}>RAISE TO 250/500/100</button>}</span></CovRow>
       <CovRow label={<span className="pl-inline"><Status ok={check.homeOk} /> Home — $300,000 personal liability required</span>}><span className="pl-stack"><span>{check.homeText}</span>{!check.homeOk && check.homeSource === 'quote' && <button type="button" className="pl-btn outline small" onClick={() => change(() => update((q) => ({ homeCoverages: { ...q.homeCoverages, personalLiability: 300000 } })))}>RAISE TO $300,000</button>}</span></CovRow>
-      <CovRow label="Exposures"><span>{u.autoExposures} auto · {u.residences} residence · {u.youthfulOperators} operator(s) under 25</span></CovRow>
+      <CovRow label="Autos / operators under 25"><span>{u.autoExposures} auto · {u.youthfulOperators} operator(s) under 25 (from this quote)</span></CovRow>
+    </div>
+    <PolicyBar title="Additional Exposures" />
+    <div className="pl-cov-rows">
+      {([['residences', 'Residences owned or rented (incl. rentals)'], ['watercraft', 'Watercraft'], ['recreationalVehicles', 'Golf carts / ATVs / recreational vehicles']] as const).map(([key, label]) => <CovRow key={key} label={label}><select aria-label={label} className="tiny" value={u[key]} onChange={(e) => { const v = Number(e.target.value); change(() => update((q) => ({ umbrella: { ...q.umbrella, [key]: v } }))); }}>{[0, 1, 2, 3, 4].map((n) => <option key={n} value={n}>{n}</option>)}</select></CovRow>)}
+      {u.watercraft > 0 && <p className="pl-muted small">Watercraft require underlying watercraft liability of at least $300,000 (boat policy).</p>}
     </div>
   </>;
 }

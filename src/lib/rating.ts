@@ -1,14 +1,15 @@
+import { ruleFor } from '@/lib/stateRules';
 import type { AutoCoverages, BoatDetails, Driver, HomeCoverages, HomeForm, LifeDetails, PayPlan, PremiumBreakdown, PremiumLine, Property, RatingPlan, UmbrellaDetails, Vehicle } from '@/data/types';
 
 // Illustrative rating factors for the demo portal. These are not ERIE filed rates.
 export const stateFactor: Record<string, number> = { PA: 1, OH: 0.92, WI: 0.95, NY: 1.38, IL: 1.06, IN: 0.94, KY: 1.12, MD: 1.18, NC: 0.97, TN: 1.02, VA: 1.03, WV: 1.08, DC: 1.3 };
 
 // Liability options from state minimums up to a combined single limit (CSL).
-export const BI_OPTIONS = ['15/30', '25/50', '50/100', '100/300', '250/500', '500/500', '300 CSL', '500 CSL'] as const;
-export const PD_OPTIONS = ['25,000', '50,000', '100,000', '250,000'] as const;
-export const UM_OPTIONS = ['15/30', '25/50', '50/100', '100/300', '250/500', '500 CSL'] as const;
-const biFactor: Record<string, number> = { '15/30': 0.74, '25/50': 0.82, '50/100': 0.92, '100/300': 1, '250/500': 1.14, '500/500': 1.24, '300 CSL': 1.1, '500 CSL': 1.22 };
-const pdFactor: Record<string, number> = { '25,000': 0.86, '50,000': 0.93, '100,000': 1, '250,000': 1.08 };
+export const BI_OPTIONS = ['15/30', '25/50', '30/60', '50/100', '100/300', '250/500', '500/500', '300 CSL', '500 CSL'] as const;
+export const PD_OPTIONS = ['5,000', '10,000', '15,000', '20,000', '25,000', '50,000', '100,000', '250,000'] as const;
+export const UM_OPTIONS = ['15/30', '25/50', '30/60', '50/100', '100/300', '250/500', '500/500', '500 CSL'] as const;
+const biFactor: Record<string, number> = { '15/30': 0.74, '25/50': 0.82, '30/60': 0.85, '50/100': 0.92, '100/300': 1, '250/500': 1.14, '500/500': 1.24, '300 CSL': 1.1, '500 CSL': 1.22 };
+const pdFactor: Record<string, number> = { '5,000': 0.78, '10,000': 0.8, '15,000': 0.82, '20,000': 0.84, '25,000': 0.86, '50,000': 0.93, '100,000': 1, '250,000': 1.08 };
 const medFactor: Record<string, number> = { None: 0, '1,000': 18, '5,000': 34, '10,000': 52 };
 const compDed: Record<number, number> = { 0: 1.35, 100: 1.18, 250: 1, 500: 0.86, 1000: 0.72 };
 const collDed: Record<number, number> = { 100: 1.32, 250: 1.16, 500: 1, 1000: 0.82, 2000: 0.7 };
@@ -36,43 +37,89 @@ export function ageFrom(dob: string, asOf = new Date()) {
   return age;
 }
 
-function driverFactor(driver: Driver) {
-  const age = ageFrom(driver.dob);
-  let factor = age < 21 ? 1.85 : age < 25 ? 1.4 : age < 30 ? 1.12 : age > 75 ? 1.15 : 1;
-  factor += driver.violations * 0.18 + driver.accidents * 0.28;
-  return factor;
-}
-
 // Underlying limits an umbrella needs: 250/500 split (or 500 CSL) with $100,000 property damage.
 export const meetsUmbrellaAutoMinimum = (bi: string, pd: string) => ['250/500', '500/500', '500 CSL'].includes(bi) && ['100,000', '250,000'].includes(pd);
 export const UMBRELLA_HOME_MINIMUM = 300000;
 
-export function rateAuto(state: string, allDrivers: Driver[], vehicles: Vehicle[], coverages: AutoCoverages, options: { multiPolicy: boolean; payPlan: PayPlan; autoPay: boolean; ratingPlan?: RatingPlan }): PremiumBreakdown {
+// Driver class factor: age, marital status, licensing experience and 3-year incident history.
+export function driverFactor(driver: Driver) {
+  const age = ageFrom(driver.dob);
+  let factor = age < 18 ? 2.3 : age < 20 ? 1.95 : age < 21 ? 1.75 : age < 25 ? 1.4 : age < 30 ? 1.12 : age >= 75 ? 1.15 : age >= 65 ? 0.97 : 1;
+  if (driver.maritalStatus === 'Married' && age < 30) factor *= 0.92;
+  const licensed = driver.dateFirstLicensed && /^\d{2}\/\d{4}$/.test(driver.dateFirstLicensed) ? new Date().getFullYear() - Number(driver.dateFirstLicensed.slice(3)) : driver.yearsLicensed;
+  if (licensed < 1) factor += 0.35; else if (licensed < 3) factor += 0.2;
+  factor += driver.violations * 0.18 + driver.accidents * 0.28;
+  // A full-time student away at school (100+ miles) without a vehicle is rated as an occasional operator.
+  if (driver.collegeStudentAway === 'yes') factor = 1 + (factor - 1) * 0.35;
+  return factor;
+}
+
+// Vehicle rating symbol from body style (illustrative): [liability, physical damage].
+function vehicleSymbol(v: Vehicle): [number, number] {
+  const name = `${v.make} ${v.model}`.toUpperCase();
+  if (/MUSTANG|CAMARO|CORVETTE|CHALLENGER|CHARGER|WRX|911|MIATA|GT-R/.test(name)) return [1.15, 1.35];
+  if (/BMW|TESLA|AUDI|MERCEDES|LEXUS|PORSCHE|CADILLAC|LINCOLN|VOLVO/.test(name)) return [1.02, 1.4];
+  if (/F-?150|F-?250|SILVERADO|COLORADO|RAM|TACOMA|TUNDRA|SIERRA|CANYON|RANGER|FRONTIER/.test(name)) return [1.05, 0.95];
+  if (/CHEROKEE|CR-V|ESCAPE|EQUINOX|EXPLORER|RAV4|OUTBACK|ENCORE|TAHOE|FORESTER|PILOT|HIGHLANDER|TRAVERSE|ROGUE/.test(name)) return [0.97, 1];
+  return [1, 1];
+}
+
+const mileageFactor = (miles: number) => (miles <= 0 ? 1 : miles < 5000 ? 0.88 : miles < 10000 ? 0.95 : miles <= 15000 ? 1 : miles <= 20000 ? 1.08 : 1.15);
+const useFactor = (v: Vehicle) => (v.use === 'Business' ? 1.2 : v.use === 'Farm' ? 0.9 : v.use === 'Commute' ? ((v.milesToWork ?? 10) > 15 ? 1.12 : 1.05) : 1);
+
+// First-party medical / no-fault premium per vehicle where the state requires it.
+const FIRST_PARTY_RATE: Record<string, number> = { PA: 38, KY: 95, NY: 140, MD: 45 };
+
+export type AutoContext = { insuranceScoreHit?: boolean; priorCarrier?: string; priorYears?: string; priorBI?: string };
+
+export function rateAuto(state: string, allDrivers: Driver[], vehicles: Vehicle[], coverages: AutoCoverages, options: { multiPolicy: boolean; payPlan: PayPlan; autoPay: boolean; ratingPlan?: RatingPlan; context?: AutoContext }): PremiumBreakdown {
   // Excluded drivers (named driver exclusion) and non-drivers are not rated.
   const drivers = allDrivers.filter((d) => !d.excluded && d.driverType !== 'Excluded Driver' && d.driverType !== 'Non-Driver');
   const plan = ratingPlanFactor[options.ratingPlan ?? 'Exchange'];
   const perVehicle = vehicles.some((v) => v.coverage);
   const territory = stateFactor[state] ?? 1;
-  const driverLoad = drivers.length === 0 ? 1 : Math.max(...drivers.map(driverFactor));
+  const rule = ruleFor(state);
+  const ctx = options.context ?? {};
+  const tort = rule.tortOption && coverages.tort === 'Limited Tort' ? 0.85 : 1;
+
+  // Each vehicle is rated on its assigned operators; drivers not assigned to any vehicle are
+  // rated on the vehicle with the highest physical damage exposure (newest). Without
+  // assignments (older quotes), the highest-rated driver applies to every vehicle.
+  const byId = new Map(drivers.map((d) => [d.id, d]));
+  const assigned = vehicles.some((v) => v.primaryOperatorId && byId.has(v.primaryOperatorId));
+  const maxFactor = drivers.length ? Math.max(...drivers.map(driverFactor)) : 1;
+  const unassigned = drivers.filter((d) => !vehicles.some((v) => v.primaryOperatorId === d.id || v.partTimeOperatorId === d.id));
+  const unassignedMax = unassigned.length ? Math.max(...unassigned.map(driverFactor)) : 0;
+  const newest = vehicles.reduce<Vehicle | undefined>((best, v) => (!best || v.year > best.year ? v : best), undefined);
+  const operatorFactor = (v: Vehicle) => {
+    if (!assigned) return maxFactor;
+    const primary = byId.get(v.primaryOperatorId ?? '');
+    const part = byId.get(v.partTimeOperatorId ?? '');
+    let f = primary ? driverFactor(primary) : maxFactor;
+    if (part) f = Math.max(f, f * 0.6 + driverFactor(part) * 0.4);
+    if (v.id === newest?.id) f = Math.max(f, unassignedMax);
+    return f;
+  };
+
   const lines: PremiumLine[] = [];
   vehicles.forEach((vehicle) => {
     const age = Math.max(0, new Date().getFullYear() - vehicle.year);
     const physicalDamage = Math.max(0.35, 1 - age * 0.06);
-    const useLoad = vehicle.use === 'Business' ? 1.2 : vehicle.use === 'Commute' ? 1.08 : 1;
-    const mileLoad = vehicle.annualMiles > 15000 ? 1.08 : vehicle.annualMiles < 7500 ? 0.94 : 1;
-    const base = territory * driverLoad * useLoad * mileLoad * plan;
+    const [symLiab, symPhys] = vehicleSymbol(vehicle);
+    const base = territory * operatorFactor(vehicle) * useFactor(vehicle) * mileageFactor(vehicle.annualMiles) * plan;
     const label = `${vehicle.year} ${vehicle.make} ${vehicle.model}`;
     const ref = vehicle.id;
     const cov = vehicle.coverage;
     const med = cov?.medPay ?? coverages.medicalPayments;
     const comp = cov?.comp ?? coverages.comprehensiveDeductible;
     const coll = cov?.coll ?? coverages.collisionDeductible;
-    lines.push({ ref, label: `${label} · Liability`, amount: round(310 * base * (biFactor[coverages.bodilyInjury] ?? 1) * (pdFactor[coverages.propertyDamage] ?? 1)) });
-    lines.push({ ref, label: `${label} · Uninsured/Underinsured Motorists`, amount: round(46 * territory * plan * (biFactor[coverages.uninsuredMotorist] ?? 1)) });
+    lines.push({ ref, label: `${label} · Liability`, amount: round(310 * base * symLiab * tort * (biFactor[coverages.bodilyInjury] ?? 1) * (pdFactor[coverages.propertyDamage] ?? 1)) });
+    lines.push({ ref, label: `${label} · Uninsured/Underinsured Motorists`, amount: round(46 * territory * plan * tort * (biFactor[coverages.uninsuredMotorist] ?? 1)) });
+    if (rule.firstParty && !(rule.firstParty.waivable && coverages.pipWaived)) lines.push({ ref, label: `${label} · ${rule.firstParty.label}`, amount: round((FIRST_PARTY_RATE[state] ?? 40) * territory * plan) });
     if (medFactor[med]) lines.push({ ref, label: `${label} · Medical Payments`, amount: round(medFactor[med] * territory * plan) });
     if (cov?.include === false) return;
-    lines.push({ ref, label: `${label} · Comprehensive (${comp} ded.)`, amount: round(118 * base * physicalDamage * (compDed[comp] ?? 1)) });
-    lines.push({ ref, label: `${label} · Collision (${coll} ded.)`, amount: round(285 * base * physicalDamage * (collDed[coll] ?? 1)) });
+    lines.push({ ref, label: `${label} · Comprehensive ($${comp} ded.)`, amount: round(118 * base * symPhys * physicalDamage * (compDed[comp] ?? 1)) });
+    lines.push({ ref, label: `${label} · Collision ($${coll} ded.)`, amount: round(285 * base * symPhys * physicalDamage * (collDed[coll] ?? 1)) });
     if (cov && ROADSIDE_OPTIONS[cov.roadside]) lines.push({ ref, label: `${label} · Roadside and/or Rental`, amount: ROADSIDE_OPTIONS[cov.roadside] });
     if (cov && AUTO_SECURITY_OPTIONS[cov.autoSecurity]) lines.push({ ref, label: `${label} · ${cov.autoSecurity}`, amount: AUTO_SECURITY_OPTIONS[cov.autoSecurity] });
   });
@@ -84,14 +131,17 @@ export function rateAuto(state: string, allDrivers: Driver[], vehicles: Vehicle[
 
   const subtotal = sum(lines);
   const discounts: PremiumLine[] = [];
+  if (ctx.priorCarrier === 'No Prior Insurance') discounts.push({ label: 'No prior insurance surcharge', amount: round(subtotal * 0.15) });
   if (options.multiPolicy) discounts.push({ label: 'Multi-policy discount (auto + home) — 10%', amount: -round(subtotal * 0.1) });
   if (vehicles.length >= 2 || vehicles.some((v) => v.forceMultiCar)) discounts.push({ label: 'Multi-car discount', amount: -round(subtotal * 0.12) });
   if (drivers.length > 0 && drivers.every((d) => d.violations === 0 && d.accidents === 0)) discounts.push({ label: 'Safe driving discount', amount: -round(subtotal * 0.1) });
-  if (drivers.some((d) => ageFrom(d.dob) < 21 && d.maritalStatus === 'Single' && d.relationship === 'Child')) discounts.push({ label: 'Youthful driver discount', amount: -round(subtotal * 0.05) });
+  if (drivers.some((d) => ageFrom(d.dob) < 21 && d.maritalStatus !== 'Married' && d.relationship === 'Child')) discounts.push({ label: 'Young driver discount (under 21, living at home)', amount: -round(subtotal * 0.05) });
   if (drivers.some((d) => d.driverTraining && ageFrom(d.dob) < 25)) discounts.push({ label: 'Driver training discount', amount: -round(subtotal * 0.03) });
   if (vehicles.some((v) => v.reducedUsage)) discounts.push({ label: 'Reduced usage discount (90+ days)', amount: -round(subtotal * 0.04) });
   if (vehicles.some((v) => v.antiTheft || v.airbags || v.antiLock || (v.antiTheftDevice && v.antiTheftDevice !== 'No'))) discounts.push({ label: 'Car safety equipment discount', amount: -round(subtotal * 0.05) });
-  if (options.payPlan === 'Annual') discounts.push({ label: 'Pay-in-full discount', amount: -round(subtotal * 0.05) });
+  if (ctx.insuranceScoreHit) discounts.push({ label: 'Insurance score (favorable tier)', amount: -round(subtotal * 0.08) });
+  if (ctx.priorCarrier && ctx.priorCarrier !== 'No Prior Insurance' && /3|4|5/.test(ctx.priorYears ?? '')) discounts.push({ label: 'Prior insurance (3+ years continuous)', amount: -round(subtotal * 0.05) });
+  if (options.payPlan === 'Annual') discounts.push({ label: 'Annual payment plan discount', amount: -round(subtotal * 0.05) });
 
   return withTotal({ product: 'Auto', name: 'ERIE Auto', lines, discounts });
 }
@@ -144,7 +194,9 @@ function rateHomeForm(state: string, property: Property, c: HomeCoverages, form:
   return withTotal({ product: 'Home', name: homeFormName[form], lines, discounts }, form === 'HO-4' ? 120 : 175);
 }
 
-export function rateHome(state: string, property: Property, coverages: HomeCoverages, options: { multiPolicy: boolean; earlyQuote: boolean; payPlan: PayPlan }): PremiumBreakdown {
+export type HomeContext = { insuranceScoreHit?: boolean; propertyClaims?: number };
+
+export function rateHome(state: string, property: Property, coverages: HomeCoverages, options: { multiPolicy: boolean; earlyQuote: boolean; payPlan: PayPlan; context?: HomeContext }): PremiumBreakdown {
   const form = coverages.form ?? 'HO-3';
   if (form !== 'HO-3') return rateHomeForm(state, property, coverages, form, options);
   const territory = stateFactor[state] ?? 1;
@@ -152,18 +204,25 @@ export function rateHome(state: string, property: Property, coverages: HomeCover
   const ageLoad = age > 60 ? 1.22 : age > 30 ? 1.1 : age < 10 ? 0.9 : 1;
   const roofAge = new Date().getFullYear() - property.roofYear;
   const roofLoad = roofAge > 20 ? 1.18 : roofAge > 12 ? 1.06 : 1;
-  const constructionLoad = property.construction === 'Frame' ? 1.06 : 0.95;
+  const constructionLoad = property.construction === 'Frame' ? 1.06 : property.construction === 'Fire Resistive' ? 0.88 : 0.95;
   const protectionLoad = 0.88 + property.protectionClass * 0.035;
   const dedFactor: Record<number, number> = { 500: 1.12, 1000: 1, 2500: 0.86, 5000: 0.76 };
-  const dwellingPremium = round((coverages.dwelling / 1000) * 2.9 * territory * ageLoad * roofLoad * constructionLoad * protectionLoad * (dedFactor[coverages.deductible] ?? 1));
+  // Roof surface, loss settlement and perils options (illustrative relativities).
+  const roofMaterialLoad = ({ Metal: 0.95, Slate: 0.95, Tile: 0.97, 'Wood Shake': 1.15, '3-Tab Composition Shingle': 1.04 } as Record<string, number>)[property.roofMaterial ?? ''] ?? 1;
+  const settlement = property.lossSettlement ?? 'Guaranteed Replacement Cost';
+  const settlementLoad = settlement === 'Actual Cash Value' ? 0.82 : settlement === 'Replacement Cost' ? 0.95 : 1;
+  const perilsLoad = property.perils === 'Named Perils' ? 0.88 : 1;
+  const familiesLoad = 1 + Math.max(0, (property.families ?? 1) - 1) * 0.1;
+  const dwellingPremium = round((coverages.dwelling / 1000) * 2.9 * territory * ageLoad * roofLoad * roofMaterialLoad * constructionLoad * protectionLoad * settlementLoad * perilsLoad * familiesLoad * (dedFactor[coverages.deductible] ?? 1));
+  const contentsLoad = (property.ppLossSettlement === 'Actual Cash Value' ? 0.85 : 1) * (property.ppPerils === 'Named Perils' ? 0.9 : 1);
   const b = coverages.otherStructuresPct ?? 10;
   const c = coverages.personalPropertyPct ?? 70;
   const d = coverages.lossOfUsePct ?? 20;
 
   const lines: PremiumLine[] = [
-    { label: `Coverage A · Dwelling — ${money(coverages.dwelling)} (Guaranteed Replacement Cost)`, amount: dwellingPremium },
-    { label: `Coverage B · Other structures (${b}%) — ${money(coverages.dwelling * b / 100)}`, amount: round(dwellingPremium * 0.04 * (b / 10)) },
-    { label: `Coverage C · Personal property (${c}%) — ${money(coverages.dwelling * c / 100)}`, amount: round(dwellingPremium * 0.12 * (c / 70)) },
+    { label: `Coverage A · Dwelling — ${money(coverages.dwelling)} (${settlement}${property.perils === 'Named Perils' ? ', named perils' : ''})`, amount: dwellingPremium },
+    { label: `Coverage B · Other structures (${Math.round(b)}%) — ${money(coverages.dwelling * b / 100)}`, amount: round(dwellingPremium * 0.04 * (b / 10)) },
+    { label: `Coverage C · Personal property (${Math.round(c)}%) — ${money(coverages.dwelling * c / 100)}${property.ppLossSettlement === 'Actual Cash Value' ? ' (actual cash value)' : ''}`, amount: round(dwellingPremium * 0.12 * (c / 70) * contentsLoad) },
     { label: `Coverage D · Loss of use (${d}%) — ${money(coverages.dwelling * d / 100)}`, amount: round(dwellingPremium * 0.03 * (d / 20)) },
     { label: `Coverage E · Personal liability — ${money(coverages.personalLiability)}`, amount: round(24 + coverages.personalLiability / 25000) },
     { label: `Coverage F · Medical payments — ${money(coverages.medicalPayments)}`, amount: round(6 + coverages.medicalPayments / 1000) },
@@ -171,6 +230,9 @@ export function rateHome(state: string, property: Property, coverages: HomeCover
   // A percentage wind/hail deductible earns a credit on the dwelling premium.
   const windHail = { '1% of Dwelling': 0.04, '2% of Dwelling': 0.07 }[coverages.windHailDeductible ?? ''] ?? 0;
   if (windHail) lines.push({ label: `Wind/hail deductible credit (${coverages.windHailDeductible})`, amount: -round(dwellingPremium * windHail) });
+  // Roof surfaces settled on a payment schedule by roof age for wind or hail losses.
+  if (property.roofWindHailSettlement === 'Yes') lines.push({ label: 'Roof surfaces wind/hail payment schedule credit', amount: -round(dwellingPremium * 0.06) });
+  if (property.swimmingPool) lines.push({ label: 'Swimming pool liability exposure', amount: 45 });
   if (coverages.waterBackup) lines.push({ label: 'Water backup & sump discharge', amount: 65 });
   if (coverages.identityRecovery) lines.push({ label: 'Identity recovery', amount: 25 });
   if (coverages.equipmentBreakdown) lines.push({ label: 'Equipment breakdown', amount: 30 });
@@ -181,10 +243,13 @@ export function rateHome(state: string, property: Property, coverages: HomeCover
   const subtotal = sum(lines);
   const discounts: PremiumLine[] = [];
   if (options.multiPolicy) discounts.push({ label: 'Multi-policy discount (auto + home) — 15%', amount: -round(subtotal * 0.15) });
-  const protective = [property.smokeAlarms, property.burglarAlarm, property.sprinklers].filter(Boolean).length;
+  // Smoke alarms, a burglar alarm (central counts fully, local half) and automatic sprinklers.
+  const protective = (property.smokeAlarms ? 1 : 0) + (property.alarm === 'Central' || property.burglarAlarm ? 1 : property.alarm === 'Local' ? 0.5 : 0) + (property.sprinklers ? 1 : 0);
   if (protective) discounts.push({ label: 'Protective device discount', amount: -round(subtotal * 0.03 * protective) });
   if (options.earlyQuote) discounts.push({ label: 'Advance quote discount (7+ days)', amount: -round(subtotal * 0.04) });
   if (age < 10) discounts.push({ label: 'Newer home discount', amount: -round(subtotal * 0.05) });
+  if (options.context?.insuranceScoreHit) discounts.push({ label: 'Insurance score (favorable tier)', amount: -round(subtotal * 0.08) });
+  if (options.context?.propertyClaims) discounts.push({ label: `Prior property loss surcharge (${options.context.propertyClaims})`, amount: round(subtotal * 0.12 * options.context.propertyClaims) });
 
   return withTotal({ product: 'Home', name: 'ErieSecure Home®', lines, discounts });
 }

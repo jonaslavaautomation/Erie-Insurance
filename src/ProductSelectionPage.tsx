@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { Calendar, Home, Info } from 'lucide-react';
+import { Home, Info } from 'lucide-react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import '@/product-page.css';
 import QuoteHeader from '@/components/QuoteHeader';
@@ -143,7 +143,7 @@ function ProductSelectionPage() {
                 <div className="product-field"><label><span>*</span>Template</label><div className="agent-control"><select className={errors[`${product}-template`] ? 'field-error wide' : 'wide'} value={d!.template} onChange={(e) => setDetail(product as 'auto' | 'home', { template: e.target.value })} aria-label={`${productLabels[product]} template`}><option value="">-- Select --</option>{templateOptions(product as 'auto' | 'home').map((t) => <option key={t}>{t}</option>)}</select>{errors[`${product}-template`] && <span className="agent-error">Please select a Template</span>}</div></div>
               </>}
             </div>
-            {pl && agents[product] && <div className="product-fields"><div className="product-field"><label><span>*</span>Effective Date</label><div className="agent-control"><span className="date-with-icon"><input type="date" className={errors[`${product}-effective`] ? 'field-error' : ''} value={d!.effective} min={today()} onChange={(e) => setDetail(product as 'auto' | 'home', { effective: e.target.value })} aria-label={`${productLabels[product]} effective date`} /><Calendar size={14} /></span><small>(mm/dd/yyyy)</small>{errors[`${product}-effective`] && <span className="agent-error">Effective Date can’t be in the past</span>}</div></div></div>}
+            {pl && agents[product] && <div className="product-fields"><div className="product-field"><label><span>*</span>Effective Date</label><div className="agent-control"><span className="date-with-icon"><input type="date" className={errors[`${product}-effective`] ? 'field-error' : ''} value={d!.effective} min={today()} onChange={(e) => setDetail(product as 'auto' | 'home', { effective: e.target.value })} aria-label={`${productLabels[product]} effective date`} /></span><small>(mm/dd/yyyy)</small>{errors[`${product}-effective`] && <span className="agent-error">Effective Date can’t be in the past</span>}</div></div></div>}
           </div>}
         </div>;
       })}</div></section>
