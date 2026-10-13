@@ -1,5 +1,6 @@
 import { createContext, ReactNode, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { supabase } from '@/lib/supabase';
+import { deleteRemoteQuotes, loadRemoteQuotes, quoteRow, SyncStatus, upsertRemoteQuotes } from '@/lib/quoteSync';
 import { ageFrom, calculateErieQuote, ErieQuoteResult, payPlanInstallments, QuoteLineKey, rateAuto, rateBoat, rateHome, rateLife, rateUmbrella } from '@/lib/rating';
 import { LEGACY_CODES, LEGACY_TRADES, liabilityPremium, rateBusiness, rateCommercialAuto, rateCommercialUmbrella, rateContractors, rateWorkersComp } from '@/data/commercial';
 import { afterPayment, dueDates, rebill } from '@/lib/billing';
@@ -62,6 +63,32 @@ export function cancelDateOf(p: Policy) {
   return entry?.text.match(/(?:effective|cancels|cancelled)\s+(\d{4}-\d{2}-\d{2})/i)?.[1];
 }
 
+/** Fills fields missing from older or partially saved quotes (browser storage or Supabase rows). */
+export function normalizeQuote(q: Quote): Quote {
+  const base = newQuoteDraft(q.applicant ?? { firstName: '', middleName: '', lastName: '', address: '', city: '', state: 'WI', zip: '', dob: '', phone: '', email: '' }, q.customerId);
+  return {
+    ...base,
+    ...q,
+    applicant: { ...base.applicant, ...q.applicant },
+    products: q.products ?? [],
+    agentNumbers: q.agentNumbers ?? {},
+    underwriting: q.underwriting ?? {},
+    drivers: q.drivers ?? [],
+    vehicles: q.vehicles ?? [],
+    property: { ...defaultProperty, ...q.property },
+    boat: q.boat ?? { ...defaultBoat },
+    life: q.life ?? { ...defaultLife },
+    umbrella: q.umbrella ?? { ...defaultUmbrella },
+    commercial: migrateCommercial(q.commercial),
+    autoCoverages: migrateAuto(q.autoCoverages ?? { ...defaultAutoCoverages })!,
+    homeCoverages: migrateHome(q.homeCoverages ?? { ...defaultHomeCoverages })!,
+    issuedPolicies: q.issuedPolicies ?? [],
+    createdAt: q.createdAt ?? base.createdAt,
+    updatedAt: q.updatedAt ?? base.updatedAt,
+    lastStep: q.lastStep ?? 'underwriting',
+  };
+}
+
 function loadData(): PortalData {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
@@ -71,7 +98,7 @@ function loadData(): PortalData {
       // Quotes saved before newer product lines existed get default details.
       return {
         ...data,
-        quotes: data.quotes.map((q) => ({ ...q, boat: q.boat ?? { ...defaultBoat }, life: q.life ?? { ...defaultLife }, umbrella: q.umbrella ?? { ...defaultUmbrella }, commercial: migrateCommercial(q.commercial), autoCoverages: migrateAuto(q.autoCoverages)!, homeCoverages: migrateHome(q.homeCoverages)! })),
+        quotes: data.quotes.map(normalizeQuote),
         policies: data.policies.map((p) => ({ ...p, autoCoverages: migrateAuto(p.autoCoverages), homeCoverages: migrateHome(p.homeCoverages), business: migrateBusiness(p.business), contractors: migrateContractors(p.contractors) })),
         claims: data.claims.map((c) => ({ ...c, status: LEGACY_CLAIM_STATUS[c.status as string] ?? c.status })),
         paymentMethods: data.paymentMethods ?? createSeed().paymentMethods,
@@ -197,6 +224,10 @@ type StoreValue = PortalData & {
   addEnvelope: (envelope: Omit<Envelope, 'id' | 'sent' | 'status'>) => void;
   updateEnvelope: (id: string, status: Envelope['status']) => void;
   resetDemo: () => void;
+  // Supabase quote saving.
+  syncStatus: SyncStatus;
+  syncError: string;
+  lastSynced: string;
 };
 
 const StoreContext = createContext<StoreValue | null>(null);
@@ -231,6 +262,71 @@ export function PortalStoreProvider({ children }: { children: ReactNode }) {
     return () => { active = false; };
   }, []);
 
+  // ---- Supabase: quotes load on start and save shortly after every change. ----
+  const [syncStatus, setSyncStatus] = useState<SyncStatus>(supabase ? 'connecting' : 'offline');
+  const [syncError, setSyncError] = useState('');
+  const [lastSynced, setLastSynced] = useState('');
+  const pushed = useRef(new Map<string, string>());
+  const pendingDeletes = useRef(new Set<string>());
+  const remoteReady = useRef(false);
+
+  useEffect(() => {
+    if (!supabase) return;
+    let active = true;
+    void (async () => {
+      try {
+        const remote = await loadRemoteQuotes();
+        if (!active) return;
+        remote.forEach((q) => pushed.current.set(q.id, q.updatedAt));
+        // The newer copy of each quote wins; quotes saved from other browsers are added.
+        setData((current) => {
+          const byId = new Map(current.quotes.map((q) => [q.id, q]));
+          remote.map(normalizeQuote).forEach((q) => { const local = byId.get(q.id); if (!local || (q.updatedAt ?? '') > (local.updatedAt ?? '')) byId.set(q.id, q); });
+          return { ...current, quotes: [...byId.values()].sort((a, b) => (b.updatedAt ?? '').localeCompare(a.updatedAt ?? '')) };
+        });
+        remoteReady.current = true;
+        setSyncStatus('saved');
+        setLastSynced(nowIso());
+      } catch (e) {
+        if (!active) return;
+        setSyncStatus('error');
+        setSyncError(e instanceof Error ? e.message : String((e as { message?: string })?.message ?? e));
+      }
+    })();
+    return () => { active = false; };
+  }, []);
+
+  useEffect(() => {
+    if (!supabase || !remoteReady.current) return;
+    const changed = data.quotes.filter((q) => pushed.current.get(q.id) !== q.updatedAt);
+    const deletes = [...pendingDeletes.current];
+    if (!changed.length && !deletes.length) return;
+    const timer = window.setTimeout(() => {
+      setSyncStatus('saving');
+      void (async () => {
+        try {
+          const others = dataRef.current.policies;
+          await upsertRemoteQuotes(changed.map((q) => {
+            const rated = q.flow !== 'pl' || q.pl?.rated;
+            let total: number | null = null;
+            try { total = rated && q.products.length ? rateQuote(q, others.filter((p) => p.customerId === q.customerId)).total : null; } catch { total = null; }
+            return quoteRow(q, total);
+          }));
+          changed.forEach((q) => pushed.current.set(q.id, q.updatedAt));
+          await deleteRemoteQuotes(deletes);
+          deletes.forEach((id) => { pendingDeletes.current.delete(id); pushed.current.delete(id); });
+          setSyncStatus('saved');
+          setSyncError('');
+          setLastSynced(nowIso());
+        } catch (e) {
+          setSyncStatus('error');
+          setSyncError(e instanceof Error ? e.message : String((e as { message?: string })?.message ?? e));
+        }
+      })();
+    }, 800);
+    return () => window.clearTimeout(timer);
+  }, [data.quotes]);
+
   const notify = useCallback((text: string, tone: Toast['tone'] = 'success') => {
     const id = ++toastId.current;
     setToasts((current) => [...current, { id, text, tone }]);
@@ -246,7 +342,10 @@ export function PortalStoreProvider({ children }: { children: ReactNode }) {
     });
   }, []);
 
-  const deleteQuotes = useCallback((ids: string[]) => setData((current) => ({ ...current, quotes: current.quotes.filter((q) => !ids.includes(q.id)) })), []);
+  const deleteQuotes = useCallback((ids: string[]) => {
+    ids.forEach((id) => pendingDeletes.current.add(id));
+    setData((current) => ({ ...current, quotes: current.quotes.filter((q) => !ids.includes(q.id)) }));
+  }, []);
   const archiveQuotes = useCallback((ids: string[], archived: boolean) => setData((current) => ({ ...current, quotes: current.quotes.map((q) => {
     // Issued quotes belong to the policy record and are never archived.
     if (!ids.includes(q.id) || q.status === 'Issued') return q;
@@ -417,7 +516,7 @@ export function PortalStoreProvider({ children }: { children: ReactNode }) {
     window.dispatchEvent(new Event('erie-work-dismissed'));
   }, []);
 
-  const value = useMemo<StoreValue>(() => ({ ...data, toasts, notify, dismissToast, saveQuote, deleteQuotes, archiveQuotes, issueQuote, updateCustomer, updatePolicy, cancelPolicy, reinstatePolicy, endorsePolicy, reinstateForNonPayment, savePaymentMethod, removePaymentMethod, setDefaultPaymentMethod, addClaim, updateClaim, makePayment, adjustBalance, setAutoPay, updateLead, addEnvelope, updateEnvelope, resetDemo }), [data, toasts, notify, dismissToast, saveQuote, deleteQuotes, archiveQuotes, issueQuote, updateCustomer, updatePolicy, cancelPolicy, reinstatePolicy, endorsePolicy, reinstateForNonPayment, savePaymentMethod, removePaymentMethod, setDefaultPaymentMethod, addClaim, updateClaim, makePayment, adjustBalance, setAutoPay, updateLead, addEnvelope, updateEnvelope, resetDemo]);
+  const value = useMemo<StoreValue>(() => ({ ...data, toasts, notify, dismissToast, saveQuote, deleteQuotes, archiveQuotes, issueQuote, updateCustomer, updatePolicy, cancelPolicy, reinstatePolicy, endorsePolicy, reinstateForNonPayment, savePaymentMethod, removePaymentMethod, setDefaultPaymentMethod, addClaim, updateClaim, makePayment, adjustBalance, setAutoPay, updateLead, addEnvelope, updateEnvelope, resetDemo, syncStatus, syncError, lastSynced }), [syncStatus, syncError, lastSynced, data, toasts, notify, dismissToast, saveQuote, deleteQuotes, archiveQuotes, issueQuote, updateCustomer, updatePolicy, cancelPolicy, reinstatePolicy, endorsePolicy, reinstateForNonPayment, savePaymentMethod, removePaymentMethod, setDefaultPaymentMethod, addClaim, updateClaim, makePayment, adjustBalance, setAutoPay, updateLead, addEnvelope, updateEnvelope, resetDemo]);
 
   return <StoreContext.Provider value={value}>{children}</StoreContext.Provider>;
 }

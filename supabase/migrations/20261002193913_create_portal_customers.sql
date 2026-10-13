@@ -72,9 +72,9 @@ CREATE INDEX IF NOT EXISTS portal_customers_name_idx
 ON public.portal_customers (last_name, first_name);
 
 INSERT INTO public.portal_customers (first_name, middle_name, last_name, address, city, state, zip, date_of_birth)
-SELECT 'David', '', 'Guttenberg', '509 Erie Insurance Way', 'Meadville', 'WI', '16335', '1968-07-14'
+SELECT 'David', '', 'Lindqvist', '509 Erie Insurance Way', 'Meadville', 'WI', '16335', '1967-11-02'
 WHERE NOT EXISTS (
-  SELECT 1 FROM public.portal_customers WHERE first_name = 'David' AND last_name = 'Guttenberg'
+  SELECT 1 FROM public.portal_customers WHERE first_name = 'David' AND last_name = 'Lindqvist'
 );
 
 INSERT INTO public.portal_customers (first_name, middle_name, last_name, address, city, state, zip, date_of_birth)

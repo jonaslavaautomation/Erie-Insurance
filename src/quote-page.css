@@ -99,3 +99,12 @@
 .qs-table td.qs-customer { font-size: 13px; }
 .qs-link { padding: 0; border: 0; background: transparent; color: #0072bc; font-size: 13px; text-decoration: underline; }
 .empty-results:has(.qs-table-wrap) { display: block; min-height: 0; }
+
+/* Supabase save status in the quoting header. */
+.sync-status { display: inline-flex; align-items: center; gap: 6px; color: #666; font-size: 12px; white-space: nowrap; }
+.sync-status i { width: 8px; height: 8px; border-radius: 50%; background: #9aa5ae; }
+.sync-status.saved i { background: #2e9e3e; }
+.sync-status.saving i, .sync-status.connecting i { background: #f5a623; }
+.sync-status.error { color: #b42323; }
+.sync-status.error i { background: #d0021b; }
+@media (max-width: 700px) { .sync-status { display: none; } }

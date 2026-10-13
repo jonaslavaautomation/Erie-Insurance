@@ -2,9 +2,13 @@ import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ChevronDown, CircleHelp } from 'lucide-react';
 import { HelpDrawer, ProfileMenu } from '@/components/ui';
+import { usePortal } from '@/data/store';
+import type { SyncStatus } from '@/lib/quoteSync';
 import type { ProductKey, Quote } from '@/data/types';
 import '@/portal.css';
 import '@/quote-page.css';
+
+const syncText: Record<SyncStatus, string> = { offline: 'Saved in this browser only', connecting: 'Connecting to Supabase…', saving: 'Saving to Supabase…', saved: 'Saved to Supabase', error: 'Supabase unreachable — saved in this browser' };
 
 const productName: Record<ProductKey, string> = { auto: 'Auto', home: 'Home', umbrella: 'Umbrella', boat: 'Boat', life: 'ERIExpress Life', commercial: 'Commercial' };
 
@@ -13,11 +17,13 @@ export default function QuoteHeader({ quote }: { quote?: Quote }) {
   const navigate = useNavigate();
   const [help, setHelp] = useState(false);
   const [open, setOpen] = useState(false);
+  const { syncStatus, syncError, lastSynced } = usePortal();
   return <header className="quote-topbar">
     <button className="quote-brand" onClick={() => navigate('/')} type="button" aria-label="Back to dashboard">
       <span className="quote-erie-mark">⌂</span><span className="quote-brand-name">Erie<small>Insurance</small></span>
     </button>
     <div className="quote-header-actions">
+      <span className={`sync-status ${syncStatus}`} role="status" title={syncStatus === 'error' ? syncError : lastSynced ? `Last saved ${new Date(`${lastSynced}Z`).toLocaleTimeString()}` : undefined}><i />{syncText[syncStatus]}</span>
       {quote ? <div className="products-menu">
         <button type="button" className="templates-link plain" aria-expanded={open} onClick={() => setOpen((v) => !v)} onBlur={() => window.setTimeout(() => setOpen(false), 150)}>Products ({quote.products.length}) <ChevronDown size={14} /></button>
         {open && <div className="products-menu-list" role="menu">{quote.products.map((p) => <div key={p} role="menuitem"><strong>{productName[p]}</strong><span>{quote.numbers?.[p] ?? quote.id}</span><small>{quote.agentNumbers[p] ?? ''}</small></div>)}</div>}
