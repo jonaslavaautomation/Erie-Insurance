@@ -7,7 +7,7 @@ import type { Quote } from '@/data/types';
  * The full quote is stored as JSON in `data`; the other columns summarize it for searching in Supabase.
  */
 
-export type SyncStatus = 'offline' | 'connecting' | 'saving' | 'saved' | 'error';
+export type SyncStatus = 'offline' | 'connecting' | 'saving' | 'saved' | 'error' | 'setup';
 
 const TABLE = 'portal_quotes';
 
@@ -45,5 +45,27 @@ export async function upsertRemoteQuotes(rows: ReturnType<typeof quoteRow>[]) {
 export async function deleteRemoteQuotes(ids: string[]) {
   if (!supabase || !ids.length) return;
   const { error } = await supabase.from(TABLE).delete().in('id', ids);
+  if (error) throw error;
+}
+
+// ---- Shared insureds, policies, billing and claims (table `portal_records`) ----
+
+export type RecordCollection = 'customers' | 'policies' | 'billing' | 'claims';
+export type RecordRow = { collection: RecordCollection; id: string; label: string; data: unknown; updated_at: string };
+const RECORDS = 'portal_records';
+
+/** True when Supabase reports that the records table hasn't been created yet. */
+export const isMissingTable = (e: unknown) => /portal_records|42P01|PGRST205|schema cache/i.test(String((e as { message?: string; code?: string })?.message ?? '') + String((e as { code?: string })?.code ?? ''));
+
+export async function loadRecords(): Promise<RecordRow[]> {
+  if (!supabase) return [];
+  const { data, error } = await supabase.from(RECORDS).select('collection, id, label, data, updated_at');
+  if (error) throw error;
+  return (data ?? []) as RecordRow[];
+}
+
+export async function upsertRecords(rows: RecordRow[]) {
+  if (!supabase || !rows.length) return;
+  const { error } = await supabase.from(RECORDS).upsert(rows, { onConflict: 'collection,id' });
   if (error) throw error;
 }

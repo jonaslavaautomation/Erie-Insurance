@@ -5,7 +5,7 @@ import PortalLayout from '@/components/PortalLayout';
 import { Field, PageTitle, Panel } from '@/components/ui';
 import { commercialLineLabels } from '@/data/commercial';
 import { STATES } from '@/data/content';
-import { newQuoteDraft, usePortal } from '@/data/store';
+import { insuredFor, newQuoteDraft, usePortal } from '@/data/store';
 import { AGENT } from '@/data/seed';
 import type { CommercialLine } from '@/data/types';
 
@@ -13,7 +13,7 @@ import type { CommercialLine } from '@/data/types';
 export default function CommercialQuotePage() {
   const [params] = useSearchParams();
   const navigate = useNavigate();
-  const { saveQuote, notify } = usePortal();
+  const { saveQuote, addCustomer, customers, notify } = usePortal();
   const [form, setForm] = useState({ ownerFirst: params.get('first') ?? '', ownerLast: params.get('last') ?? '', businessName: '', address: '', city: '', state: AGENT.stateCode, zip: '', agentNumber: AGENT.agentNumbers[0] });
   const [lines, setLines] = useState<CommercialLine[]>(['bop']);
   const [errors, setErrors] = useState<string[]>([]);
@@ -30,7 +30,8 @@ export default function CommercialQuotePage() {
     if (lines.includes('umbrella') && !lines.includes('bop') && !lines.includes('contractors')) problems.push('A commercial umbrella needs underlying general liability — add Ultrapack Plus or Fivestar Contractors.');
     setErrors(problems);
     if (problems.length) return;
-    const quote = newQuoteDraft({ firstName: form.ownerFirst, middleName: '', lastName: form.ownerLast, address: form.address, city: form.city, state: form.state, zip: form.zip, dob: '', phone: '', email: '' });
+    const applicant = { firstName: form.ownerFirst, middleName: '', lastName: form.ownerLast, address: form.address, city: form.city, state: form.state, zip: form.zip, dob: '', phone: '', email: '' };
+    const quote = newQuoteDraft(applicant, insuredFor(customers, applicant, addCustomer));
     quote.products = ['commercial'];
     quote.agentNumbers = { commercial: form.agentNumber };
     quote.commercial = { ...quote.commercial, lines, business: { ...quote.commercial.business, businessName: form.businessName, ownerFirst: form.ownerFirst, ownerLast: form.ownerLast, address: form.address, city: form.city, state: form.state, zip: form.zip } };

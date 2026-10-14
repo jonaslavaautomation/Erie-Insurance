@@ -108,3 +108,5 @@
 .sync-status.error { color: #b42323; }
 .sync-status.error i { background: #d0021b; }
 @media (max-width: 700px) { .sync-status { display: none; } }
+.sync-status.setup { color: #8a5a00; }
+.sync-status.setup i { background: #f5a623; }

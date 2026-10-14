@@ -4,7 +4,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import '@/product-page.css';
 import QuoteHeader from '@/components/QuoteHeader';
 import { Modal } from '@/components/ui';
-import { newQuoteDraft, today, usePortal } from '@/data/store';
+import { insuredFor, newQuoteDraft, today, usePortal } from '@/data/store';
 import { AGENT, defaultAutoCoverages, defaultHomeCoverages } from '@/data/seed';
 import { loadTemplates } from '@/lib/templates';
 import { blankPl, nextQuoteNumbers } from '@/lib/personalLines';
@@ -44,7 +44,7 @@ type Detail = { template: string; effective: string; policyType: string };
 function ProductSelectionPage() {
   const navigate = useNavigate();
   const [params] = useSearchParams();
-  const { saveQuote, policies, quotes, notify } = usePortal();
+  const { saveQuote, addCustomer, customers, policies, quotes, notify } = usePortal();
   const firstName = params.get('firstName') ?? '';
   const middleName = params.get('middleName') ?? '';
   const lastName = params.get('lastName') ?? '';
@@ -91,7 +91,9 @@ function ProductSelectionPage() {
     setErrors(next);
     if (selectedCount === 0) { setNoProduct(true); return; }
     if (Object.values(next).some(Boolean)) return;
-    const quote = newQuoteDraft({ firstName, middleName, lastName, address, city, state, zip, dob, phone: '', email: '' }, customerId);
+    // The insured is saved as a (shared) account when the quote starts, so others can find and quote them.
+    const applicant = { firstName, middleName, lastName, address, city, state, zip, dob, phone: '', email: '' };
+    const quote = newQuoteDraft(applicant, customerId ?? insuredFor(customers, applicant, addCustomer));
     quote.products = productOrder.filter((p) => selected[p]);
     quote.agentNumbers = Object.fromEntries(quote.products.map((p) => [p, agents[p]]));
     quote.numbers = nextQuoteNumbers(quotes, quote.products);

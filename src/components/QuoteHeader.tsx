@@ -8,7 +8,7 @@ import type { ProductKey, Quote } from '@/data/types';
 import '@/portal.css';
 import '@/quote-page.css';
 
-const syncText: Record<SyncStatus, string> = { offline: 'Saved in this browser only', connecting: 'Connecting to Supabase…', saving: 'Saving to Supabase…', saved: 'Saved to Supabase', error: 'Supabase unreachable — saved in this browser' };
+const syncText: Record<SyncStatus, string> = { offline: 'Saved in this browser only', connecting: 'Connecting to Supabase…', saving: 'Saving to Supabase…', saved: 'Saved to Supabase', error: 'Supabase unreachable — saved in this browser', setup: 'Supabase: run the updated setup.sql to share insureds' };
 
 const productName: Record<ProductKey, string> = { auto: 'Auto', home: 'Home', umbrella: 'Umbrella', boat: 'Boat', life: 'ERIExpress Life', commercial: 'Commercial' };
 

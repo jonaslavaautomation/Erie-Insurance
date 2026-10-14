@@ -18,6 +18,8 @@ export type Customer = {
   phone: string;
   email: string;
   customerSince: string;
+  // A prospect: added when a quote was started, before anything was bound.
+  prospect?: boolean;
 };
 
 export type Driver = {

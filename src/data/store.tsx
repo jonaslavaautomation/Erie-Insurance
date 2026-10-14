@@ -1,6 +1,6 @@
 import { createContext, ReactNode, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { supabase } from '@/lib/supabase';
-import { deleteRemoteQuotes, loadRemoteQuotes, quoteRow, SyncStatus, upsertRemoteQuotes } from '@/lib/quoteSync';
+import { deleteRemoteQuotes, isMissingTable, loadRecords, loadRemoteQuotes, quoteRow, RecordCollection, RecordRow, SyncStatus, upsertRecords, upsertRemoteQuotes } from '@/lib/quoteSync';
 import { ageFrom, calculateErieQuote, ErieQuoteResult, payPlanInstallments, QuoteLineKey, rateAuto, rateBoat, rateHome, rateLife, rateUmbrella } from '@/lib/rating';
 import { LEGACY_CODES, LEGACY_TRADES, liabilityPremium, rateBusiness, rateCommercialAuto, rateCommercialUmbrella, rateContractors, rateWorkersComp } from '@/data/commercial';
 import { afterPayment, dueDates, rebill } from '@/lib/billing';
@@ -148,6 +148,12 @@ function loadData(): PortalData {
   return rollForward(createSeed());
 }
 
+/** The insured for a new quote: an existing customer with the same name and birth date, or a new prospect. */
+export function insuredFor(customers: Customer[], a: Quote['applicant'], addCustomer: (c: Omit<Customer, 'id'>) => string) {
+  const same = customers.find((c) => c.firstName.trim().toLowerCase() === a.firstName.trim().toLowerCase() && c.lastName.trim().toLowerCase() === a.lastName.trim().toLowerCase() && (!a.dob || !c.dob || c.dob === a.dob));
+  return same?.id ?? addCustomer({ ...a, customerSince: today(), prospect: true });
+}
+
 export function newQuoteDraft(applicant: Quote['applicant'], customerId?: string): Quote {
   const stamp = nowIso();
   return {
@@ -241,6 +247,7 @@ type StoreValue = PortalData & {
   notify: (text: string, tone?: Toast['tone']) => void;
   dismissToast: (id: number) => void;
   saveQuote: (quote: Quote) => void;
+  addCustomer: (customer: Omit<Customer, 'id'>) => string;
   deleteQuotes: (ids: string[]) => void;
   archiveQuotes: (ids: string[], archived: boolean) => void;
   issueQuote: (id: string) => string[];
@@ -332,7 +339,7 @@ export function PortalStoreProvider({ children }: { children: ReactNode }) {
         syncedIds.current = remoteIds;
         writeIds(SYNCED_KEY, remoteIds);
         remoteReady.current = true;
-        setSyncStatus('saved');
+        setSyncStatus((st) => (st === 'setup' ? st : 'saved'));
         setSyncError('');
         setLastSynced(nowIso());
       } catch (e) {
@@ -353,7 +360,7 @@ export function PortalStoreProvider({ children }: { children: ReactNode }) {
     const deletes = [...pendingDeletes.current];
     if (!changed.length && !deletes.length) return;
     const timer = window.setTimeout(() => {
-      setSyncStatus('saving');
+      setSyncStatus((st) => (st === 'setup' ? st : 'saving'));
       void (async () => {
         try {
           const others = dataRef.current.policies;
@@ -368,7 +375,7 @@ export function PortalStoreProvider({ children }: { children: ReactNode }) {
           deletes.forEach((id) => { pendingDeletes.current.delete(id); pushed.current.delete(id); syncedIds.current.delete(id); });
           writeIds(DELETED_KEY, pendingDeletes.current);
           writeIds(SYNCED_KEY, syncedIds.current);
-          setSyncStatus('saved');
+          setSyncStatus((st) => (st === 'setup' ? st : 'saved'));
           setSyncError('');
           setLastSynced(nowIso());
         } catch (e) {
@@ -379,6 +386,72 @@ export function PortalStoreProvider({ children }: { children: ReactNode }) {
     }, 800);
     return () => window.clearTimeout(timer);
   }, [data.quotes]);
+
+  // ---- Supabase: insureds, policies, billing and claims are shared the same way. ----
+  const pushedRecords = useRef(new Map<string, string>());
+  const recordsReady = useRef(false);
+  useEffect(() => {
+    if (!supabase) return;
+    let active = true;
+    let attempt = 0;
+    let retry = 0;
+    const load = async () => {
+      try {
+        const rows = await loadRecords();
+        if (!active) return;
+        rows.forEach((r) => pushedRecords.current.set(`${r.collection}:${r.id}`, JSON.stringify(r.data)));
+        // Shared copies replace local ones; records only in this browser are uploaded next.
+        setData((current) => {
+          const merge = <T,>(collection: RecordCollection, local: T[], key: (x: T) => string) => {
+            const byId = new Map(local.map((x) => [key(x), x]));
+            rows.filter((r) => r.collection === collection).forEach((r) => byId.set(r.id, r.data as T));
+            return [...byId.values()];
+          };
+          return rollForward({
+            ...current,
+            customers: merge('customers', current.customers, (c) => c.id),
+            policies: merge('policies', current.policies, (p) => p.number),
+            billing: merge('billing', current.billing, (b) => b.policyNumber),
+            claims: merge('claims', current.claims, (c) => c.number),
+          });
+        });
+        recordsReady.current = true;
+      } catch (e) {
+        if (!active) return;
+        if (isMissingTable(e)) { setSyncStatus('setup'); setSyncError('Run the updated supabase/setup.sql to share insureds and policies.'); return; }
+        retry = window.setTimeout(() => { void load(); }, [10000, 30000][attempt++] ?? 60000);
+      }
+    };
+    void load();
+    return () => { active = false; window.clearTimeout(retry); };
+  }, []);
+
+  useEffect(() => {
+    if (!supabase || !recordsReady.current) return;
+    const rows: RecordRow[] = [];
+    const collect = <T,>(collection: RecordCollection, items: T[], key: (x: T) => string, label: (x: T) => string) => items.forEach((x) => {
+      const id = key(x);
+      const json = JSON.stringify(x);
+      if (pushedRecords.current.get(`${collection}:${id}`) !== json) rows.push({ collection, id, label: label(x), data: x, updated_at: new Date().toISOString() });
+    });
+    collect('customers', data.customers, (c) => c.id, (c) => `${c.lastName}, ${c.firstName}${c.prospect ? ' (prospect)' : ''}`);
+    collect('policies', data.policies, (p) => p.number, (p) => `${p.type} ${p.number} · ${p.status}`);
+    collect('billing', data.billing, (b) => b.policyNumber, (b) => `${b.policyNumber} · balance ${b.balance}`);
+    collect('claims', data.claims, (c) => c.number, (c) => `${c.number} · ${c.status}`);
+    if (!rows.length) return;
+    const timer = window.setTimeout(() => {
+      void (async () => {
+        try {
+          await upsertRecords(rows);
+          rows.forEach((r) => pushedRecords.current.set(`${r.collection}:${r.id}`, JSON.stringify(r.data)));
+        } catch (e) {
+          setSyncStatus(isMissingTable(e) ? 'setup' : 'error');
+          setSyncError(isMissingTable(e) ? 'Run the updated supabase/setup.sql to share insureds and policies.' : e instanceof Error ? e.message : String((e as { message?: string })?.message ?? e));
+        }
+      })();
+    }, 1000);
+    return () => window.clearTimeout(timer);
+  }, [data.customers, data.policies, data.billing, data.claims]);
 
   const notify = useCallback((text: string, tone: Toast['tone'] = 'success') => {
     const id = ++toastId.current;
@@ -391,8 +464,16 @@ export function PortalStoreProvider({ children }: { children: ReactNode }) {
     setData((current) => {
       const exists = current.quotes.some((q) => q.id === quote.id);
       const next = { ...quote, updatedAt: nowIso() };
-      return { ...current, quotes: exists ? current.quotes.map((q) => (q.id === quote.id ? next : q)) : [next, ...current.quotes] };
+      const a = quote.applicant;
+      const customers = current.customers.map((c) => (c.id === quote.customerId && c.prospect && (c.firstName !== a.firstName || c.lastName !== a.lastName || c.middleName !== a.middleName || c.address !== a.address || c.city !== a.city || c.state !== a.state || c.zip !== a.zip || c.dob !== a.dob || c.phone !== a.phone || c.email !== a.email) ? { ...c, ...a } : c));
+      return { ...current, customers, quotes: exists ? current.quotes.map((q) => (q.id === quote.id ? next : q)) : [next, ...current.quotes] };
     });
+  }, []);
+
+  const addCustomer = useCallback((customer: Omit<Customer, 'id'>) => {
+    const id = `C-${randomDigits(6)}`;
+    setData((current) => ({ ...current, customers: [...current.customers, { ...customer, id }] }));
+    return id;
   }, []);
 
   const deleteQuotes = useCallback((ids: string[]) => {
@@ -456,7 +537,7 @@ export function PortalStoreProvider({ children }: { children: ReactNode }) {
         const known = new Set(latest.customers.map((c) => c.id));
         const next: PortalData = {
           ...latest,
-          customers: [...latest.customers, ...customers.filter((c) => !known.has(c.id))],
+          customers: [...latest.customers.map((c) => (c.id === customerId && c.prospect ? { ...c, prospect: false, customerSince: quote.effectiveDate } : c)), ...customers.filter((c) => !known.has(c.id))],
           policies: [...newPolicies, ...latest.policies],
           billing: [...newBilling, ...latest.billing],
           quotes: latest.quotes.map((q) => (q.id === id ? { ...q, customerId, status: 'Issued', issuedPolicies: [...issued], updatedAt: nowIso() } : q)),
@@ -575,7 +656,7 @@ export function PortalStoreProvider({ children }: { children: ReactNode }) {
     window.dispatchEvent(new Event('erie-work-dismissed'));
   }, []);
 
-  const value = useMemo<StoreValue>(() => ({ ...data, toasts, notify, dismissToast, saveQuote, deleteQuotes, archiveQuotes, issueQuote, updateCustomer, updatePolicy, cancelPolicy, reinstatePolicy, endorsePolicy, reinstateForNonPayment, savePaymentMethod, removePaymentMethod, setDefaultPaymentMethod, addClaim, updateClaim, makePayment, adjustBalance, setAutoPay, updateLead, addEnvelope, updateEnvelope, resetDemo, syncStatus, syncError, lastSynced }), [syncStatus, syncError, lastSynced, data, toasts, notify, dismissToast, saveQuote, deleteQuotes, archiveQuotes, issueQuote, updateCustomer, updatePolicy, cancelPolicy, reinstatePolicy, endorsePolicy, reinstateForNonPayment, savePaymentMethod, removePaymentMethod, setDefaultPaymentMethod, addClaim, updateClaim, makePayment, adjustBalance, setAutoPay, updateLead, addEnvelope, updateEnvelope, resetDemo]);
+  const value = useMemo<StoreValue>(() => ({ ...data, toasts, notify, dismissToast, saveQuote, addCustomer, deleteQuotes, archiveQuotes, issueQuote, updateCustomer, updatePolicy, cancelPolicy, reinstatePolicy, endorsePolicy, reinstateForNonPayment, savePaymentMethod, removePaymentMethod, setDefaultPaymentMethod, addClaim, updateClaim, makePayment, adjustBalance, setAutoPay, updateLead, addEnvelope, updateEnvelope, resetDemo, syncStatus, syncError, lastSynced }), [syncStatus, syncError, lastSynced, data, toasts, notify, dismissToast, saveQuote, addCustomer, deleteQuotes, archiveQuotes, issueQuote, updateCustomer, updatePolicy, cancelPolicy, reinstatePolicy, endorsePolicy, reinstateForNonPayment, savePaymentMethod, removePaymentMethod, setDefaultPaymentMethod, addClaim, updateClaim, makePayment, adjustBalance, setAutoPay, updateLead, addEnvelope, updateEnvelope, resetDemo]);
 
   return <StoreContext.Provider value={value}>{children}</StoreContext.Provider>;
 }
