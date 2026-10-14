@@ -79,7 +79,7 @@ export default function PolicyPage() {
           <button type="button" onClick={openDec}><FileText size={14} /> Declarations page</button>
           <Link to={`/billing/autopay?policy=${policy.number}`}><CreditCard size={14} /> {policy.autoPay ? 'Manage AutoPay' : 'Enroll in AutoPay'}</Link>
           <Link to={`/billing/methods?customer=${policy.customerId}`}><CreditCard size={14} /> Payment methods</Link>
-          <Link to={`/resources/certificates?policy=${policy.number}`}><FileText size={14} /> Certificate of insurance</Link>
+          {policy.status !== 'Cancelled' && <Link to={`/resources/certificates?policy=${policy.number}`}><FileText size={14} /> Certificate of insurance</Link>}
           {policy.status === 'Active' && <button type="button" className="danger" onClick={() => setModal('cancel')}><Ban size={14} /> Cancel policy</button>}
           {nonPayment && <Link to={`/billing/reinstate/${policy.number}`}><RotateCcw size={14} /> Reinstate (non-payment)</Link>}
           {!nonPayment && (policy.status === 'Pending Cancel' || policy.status === 'Cancelled') && <button type="button" onClick={() => { reinstatePolicy(policy.number); notify(`Policy ${policy.number} reinstated.`); }}><RotateCcw size={14} /> Rescind cancellation</button>}

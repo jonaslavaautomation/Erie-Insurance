@@ -73,7 +73,8 @@ function ProductSelectionPage() {
     setNoProduct(false);
   };
   const setAgent = (product: ProductKey, agent: string) => { setAgents((c) => ({ ...c, [product]: agent })); setErrors((c) => ({ ...c, [`${product}-agent`]: false })); };
-  const setDetail = (product: 'auto' | 'home', patch: Partial<Detail>) => { setDetails((c) => ({ ...c, [product]: { ...c[product], ...patch } })); setErrors((c) => ({ ...c, ...Object.fromEntries(Object.keys(patch).map((k) => [`${product}-${k}`, false])) })); };
+  // Auto and home on one quote share the quote's effective date, so changing one changes both.
+  const setDetail = (product: 'auto' | 'home', patch: Partial<Detail>) => { setDetails((c) => ({ ...c, [product]: { ...c[product], ...patch }, ...(patch.effective !== undefined ? { [product === 'auto' ? 'home' : 'auto']: { ...c[product === 'auto' ? 'home' : 'auto'], effective: patch.effective } } : {}) })); setErrors((c) => ({ ...c, ...Object.fromEntries(Object.keys(patch).map((k) => [`${product}-${k}`, false])) })); };
 
   const continueWizard = () => {
     const next: Record<string, boolean> = {};

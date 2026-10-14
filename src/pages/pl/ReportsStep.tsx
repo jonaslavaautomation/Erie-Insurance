@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { ChevronDown, Info } from 'lucide-react';
 import { escapeHtml as h, openDocument, simpleDocument } from '@/lib/documents';
-import { nextQuoteNumbers, orderReports, personName, usDate } from '@/lib/personalLines';
+import { nextQuoteNumbers, orderReports, personName, reportsKey, usDate } from '@/lib/personalLines';
 import { ageFrom } from '@/lib/rating';
 import { usePortal } from '@/data/store';
 import type { RatingPlan, ReportRow } from '@/data/types';
@@ -22,9 +22,12 @@ export default function ReportsStep() {
   const ordered = useRef(false);
 
   useEffect(() => {
-    if (pl.reports.length || ordered.current) return;
+    const key = reportsKey(quote);
+    if ((pl.reports.length && pl.reportsKey === key) || ordered.current) return;
     ordered.current = true;
-    busy('Ordering Reports...', () => setPl({ reports: orderReports(quote) }), 1100);
+    // Agent-entered claims and violations are kept for drivers still on the quote.
+    const kept = pl.reports.filter((r) => /Agent Entered/.test(r.report) && quote.drivers.some((d) => d.id === r.driverId));
+    busy('Ordering Reports...', () => setPl({ reports: [...orderReports(quote), ...kept], reportsKey: key, rated: false }), 1100);
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const choosePlan = (plan: RatingPlan) => { if (plan === 'ErieSecure Auto' && pl.ratingPlan !== plan) setPlanPending(plan); else setPl({ ratingPlan: plan, rated: false }); };
@@ -34,7 +37,7 @@ export default function ReportsStep() {
       // Umbrella is offered on every auto/home account once rated.
       const addUmbrella = !q.products.includes('umbrella') && (q.products.includes('auto') || q.products.includes('home'));
       const products = addUmbrella ? [...q.products, 'umbrella' as const] : q.products;
-      const youthful = q.drivers.filter((d) => d.driverType !== 'Non-Driver' && d.dob && ageFrom(d.dob) < 25).length;
+      const youthful = q.drivers.filter((d) => d.driverType !== 'Non-Driver' && d.driverType !== 'Excluded Driver' && d.dob && ageFrom(d.dob) < 25).length;
       return {
         products,
         agentNumbers: addUmbrella ? { ...q.agentNumbers, umbrella: q.agentNumbers.auto ?? q.agentNumbers.home } : q.agentNumbers,
@@ -75,7 +78,7 @@ export default function ReportsStep() {
         {quote.products.includes('auto') && <label className="pl-plan">Auto Rating Plan <select aria-label="Auto Rating Plan" value={pl.ratingPlan} onChange={(e) => choosePlan(e.target.value as RatingPlan)}><option>Exchange</option><option>Company</option><option>ErieSecure Auto</option></select></label>}
       </div>
     </section>
-    <div className="pl-footer"><div><button type="button" className="pl-btn outline" onClick={saveExit}>SAVE &amp; EXIT</button><button type="button" className="pl-btn outline" onClick={printReports}>PRINT REPORTS</button></div><div><button type="button" className="pl-btn outline" onClick={() => go(quote.products.includes('home') ? 'dwelling' : 'vehicles')}>PREVIOUS</button><button type="button" className="pl-btn" onClick={rate} disabled={!pl.reports.length}>RATE</button></div></div>
+    <div className="pl-footer"><div><button type="button" className="pl-btn outline" onClick={saveExit}>SAVE &amp; EXIT</button><button type="button" className="pl-btn outline" onClick={printReports}>PRINT REPORTS</button></div><div><button type="button" className="pl-btn outline" onClick={() => go(quote.products.includes('home') ? 'dwelling' : 'vehicles')}>PREVIOUS</button><button type="button" className="pl-btn" onClick={rate} disabled={!pl.reports.length || pl.reportsKey !== reportsKey(quote)}>RATE</button></div></div>
 
     {detail && <PlModal title={`${detail.report} — ${detail.status}`} onCancel={() => setDetail(null)} cancelLabel="CLOSE">
       <table className="pl-table compact"><tbody><tr><td>Name</td><td><strong>{detail.name}</strong></td></tr><tr><td>Report date</td><td>{usDate(detail.date)}</td></tr>{detail.lossDate && <tr><td>Loss date</td><td>{usDate(detail.lossDate)}</td></tr>}{detail.amount !== null && <tr><td>Amount paid</td><td>${detail.amount.toFixed(2)}</td></tr>}</tbody></table>

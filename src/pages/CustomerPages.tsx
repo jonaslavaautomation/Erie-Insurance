@@ -100,15 +100,23 @@ function EditCustomerModal({ customer, onClose }: { customer: Customer; onClose:
   const { notify, policies, updatePolicy, updateCustomer } = usePortal();
   const [form, setForm] = useState(customer);
   const set = (key: keyof Customer, value: string) => setForm({ ...form, [key]: value });
+  const [error, setError] = useState('');
   const save = () => {
+    if (!form.address.trim() || !form.city.trim()) return setError('Enter the street address and city.');
+    if (!/^\d{5}$/.test(form.zip)) return setError('ZIP code must be 5 digits.');
+    if (form.email && !/^\S+@\S+\.\S+$/.test(form.email)) return setError('Enter a valid email address.');
+    if (form.phone && form.phone.replace(/\D/g, '').length !== 10) return setError('Phone number must have 10 digits.');
+    const addressChanged = form.address !== customer.address || form.city !== customer.city || form.zip !== customer.zip;
+    const anyChange = addressChanged || form.phone !== customer.phone || form.email !== customer.email;
+    if (!anyChange) { onClose(); return; }
     // Customer edits are recorded as a change on each of the customer's policies.
-    const changed = form.address !== customer.address || form.city !== customer.city || form.zip !== customer.zip;
-    policies.filter((p) => p.customerId === customer.id).forEach((p) => updatePolicy(p.number, {}, changed ? `Mailing address changed to ${form.address}, ${form.city} ${form.zip}` : 'Contact information updated'));
+    policies.filter((p) => p.customerId === customer.id).forEach((p) => updatePolicy(p.number, {}, addressChanged ? `Mailing address changed to ${form.address}, ${form.city} ${form.zip}` : 'Contact information updated'));
     updateCustomer(form);
     notify('Customer contact information updated.');
     onClose();
   };
   return <Modal title="Edit contact information" onClose={onClose} footer={<><button type="button" className="px-btn ghost" onClick={onClose}>Cancel</button><button type="button" className="px-btn" onClick={save}>Save changes</button></>}>
+    {error && <div className="agent-error block" role="alert">{error}</div>}
     <div className="px-grid2"><Field label="Street address" className="span2"><input value={form.address} onChange={(e) => set('address', e.target.value)} /></Field><Field label="City"><input value={form.city} onChange={(e) => set('city', e.target.value)} /></Field><Field label="ZIP"><input value={form.zip} onChange={(e) => set('zip', e.target.value)} /></Field><Field label="Phone"><input value={form.phone} onChange={(e) => set('phone', e.target.value)} /></Field><Field label="Email"><input value={form.email} onChange={(e) => set('email', e.target.value)} /></Field></div>
     <p className="px-muted">Address changes on auto policies may re-rate garaging territory. ERIE Rate Lock® premiums can change when the address changes.</p>
   </Modal>;

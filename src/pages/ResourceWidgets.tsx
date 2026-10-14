@@ -62,7 +62,11 @@ export function CertificatesWidget() {
   const [generated, setGenerated] = useState(false);
   const policy = policies.find((p) => p.number === policyNumber);
   const customer = policy ? customers.find((c) => c.id === policy.customerId) : undefined;
-  const generate = () => { if (!policy || !holder.name || !holder.address) return notify('Select a policy and enter the certificate holder.', 'error'); setGenerated(true); };
+  const generate = () => {
+    if (!policy || !holder.name || !holder.address) return notify('Select a policy and enter the certificate holder.', 'error');
+    if (policy.status === 'Cancelled') return notify(`${policy.number} is cancelled — certificates can only be issued for in-force policies.`, 'error');
+    setGenerated(true);
+  };
   return <Panel title="Generate a certificate">
     <div className="px-grid2">
       <Field label="Policy" required><select value={policyNumber} onChange={(e) => { setPolicyNumber(e.target.value); setGenerated(false); }}><option value="">-- Select an active policy --</option>{policies.filter((p) => p.status === 'Active').map((p) => <option key={p.number} value={p.number}>{p.number} · {p.type} · {fullName(customers.find((c) => c.id === p.customerId) ?? { firstName: '', lastName: '' })}</option>)}</select></Field>
@@ -133,7 +137,7 @@ export function EriebooksWidget() {
   const chapters = ['Introduction & eligibility', 'Definitions', 'Rating rules', 'Coverage forms & endorsements', 'Discounts', 'State exceptions', 'Underwriting referrals', 'Appendix — forms list'];
   return <Panel title="Library">
     <div className="book-grid">{eriebooks.map((b) => <button key={b.title} type="button" className="book" onClick={() => setOpen(b)}><BookOpen size={22} /><strong>{b.title}</strong><small>Updated {b.updated} · {b.pages} pages</small></button>)}</div>
-    {open && <Modal title={open.title} wide onClose={() => { setOpen(null); setSearch(''); }}><Field label="Search this manual"><input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="e.g. discounts" /></Field><ol className="toc">{chapters.filter((c) => c.toLowerCase().includes(search.toLowerCase())).map((c, i) => <li key={c}><span>{c}</span><small>p. {1 + i * Math.round(open.pages / chapters.length)}</small></li>)}</ol></Modal>}
+    {open && <Modal title={open.title} wide onClose={() => { setOpen(null); setSearch(''); }}><Field label="Search this manual"><input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="e.g. discounts" /></Field><ol className="toc">{chapters.map((c, i) => ({ c, page: 1 + i * Math.round(open.pages / chapters.length) })).filter(({ c }) => c.toLowerCase().includes(search.toLowerCase())).map(({ c, page }) => <li key={c}><span>{c}</span><small>p. {page}</small></li>)}</ol></Modal>}
   </Panel>;
 }
 

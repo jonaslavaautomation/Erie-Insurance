@@ -20,8 +20,8 @@ export function StatusIcon({ state }: { state: 'ok' | 'warn' | 'error' }) {
   return <XCircle className="pl-status error" size={16} aria-label="Incomplete or incorrect" />;
 }
 
-export function YesNo({ name, value, onChange }: { name: string; value: boolean | undefined; onChange: (v: boolean) => void }) {
-  return <span className="pl-yesno" role="radiogroup">{[true, false].map((v) => <label key={String(v)}><input type="radio" name={name} checked={value === v} onChange={() => onChange(v)} /> {v ? 'Yes' : 'No'}</label>)}</span>;
+export function YesNo({ name, value, onChange, label }: { name: string; value: boolean | undefined; onChange: (v: boolean) => void; label?: string }) {
+  return <span className="pl-yesno" role="radiogroup" aria-label={label}>{[true, false].map((v) => <label key={String(v)}><input type="radio" name={name} checked={value === v} onChange={() => onChange(v)} /> {v ? 'Yes' : 'No'}</label>)}</span>;
 }
 
 export function ErrorBanner({ show }: { show: boolean }) {
@@ -61,7 +61,13 @@ export function DateInput({ value, onChange, label, invalid }: { value: string; 
       const iso = `${d.slice(4)}-${d.slice(0, 2)}-${d.slice(2, 4)}`;
       const dt = new Date(`${iso}T12:00:00`);
       onChange(!Number.isNaN(dt.getTime()) && dt.toISOString().slice(0, 10) === iso ? iso : '');
-    } else if (!d) onChange('');
+    } else onChange(''); // incomplete date: no value until all 8 digits are entered
   };
   return <span className="pl-date"><input aria-label={label} value={text} onChange={(e) => change(e.target.value)} placeholder="mm/dd/yyyy" inputMode="numeric" className={invalid ? 'bad' : ''} /><small>(mm/dd/yyyy)</small></span>;
+}
+
+/** Tax ID: shows ***-**-1234 until focused, then the digits being typed. */
+export function TaxIdInput({ value, onChange, label }: { value: string; onChange: (digits: string) => void; label: string }) {
+  const [focused, setFocused] = useState(false);
+  return <input aria-label={label} inputMode="numeric" placeholder="Optional" value={focused ? value : value ? `***-**-${value.slice(-4)}` : ''} onFocus={() => setFocused(true)} onBlur={() => setFocused(false)} onChange={(e) => onChange(e.target.value.replace(/\D/g, '').slice(0, 9))} />;
 }

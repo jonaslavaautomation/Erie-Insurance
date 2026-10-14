@@ -568,3 +568,13 @@ button.record-alert:hover { background: #00508f; }
 .method-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 8px; margin-bottom: 12px; }
 .method-list .plan strong { display: flex; align-items: center; gap: 6px; font-size: 13px; }
 .credit-text { color: var(--good); font-weight: 700; }
+
+/* Layout fixes: definition lists may shrink (long emails/addresses wrap), and data tables scroll
+   inside their panel on phones instead of widening the page. */
+.px-dl { grid-template-columns: 140px minmax(0, 1fr); }
+.px-dl.two { grid-template-columns: 160px minmax(0, 1fr); }
+.px-dl dd { min-width: 0; overflow-wrap: anywhere; }
+@media (max-width: 700px) {
+  .px-table { display: block; max-width: 100%; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  .px-dl, .px-dl.two { grid-template-columns: minmax(0, 1fr); }
+}

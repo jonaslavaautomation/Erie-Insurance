@@ -84,10 +84,12 @@ export function ProfileMenu({ variant = 'portal' }: { variant?: 'portal' | 'quot
   </div>;
 }
 
+const PREFS_KEY = 'erie-agentexchange-preferences';
+
 function PreferencesModal({ onClose }: { onClose: () => void }) {
   const { notify } = usePortal();
-  const [prefs, setPrefs] = useState({ email: true, leads: true, claims: true, landing: 'Dashboard' });
-  return <Modal title="Preferences" onClose={onClose} footer={<><button type="button" className="px-btn ghost" onClick={onClose}>Cancel</button><button type="button" className="px-btn" onClick={() => { notify('Preferences saved.'); onClose(); }}>Save</button></>}>
+  const [prefs, setPrefs] = useState(() => { const fallback = { email: true, leads: true, claims: true, landing: 'Dashboard' }; try { return { ...fallback, ...JSON.parse(localStorage.getItem(PREFS_KEY) ?? '{}') }; } catch { return fallback; } });
+  return <Modal title="Preferences" onClose={onClose} footer={<><button type="button" className="px-btn ghost" onClick={onClose}>Cancel</button><button type="button" className="px-btn" onClick={() => { try { localStorage.setItem(PREFS_KEY, JSON.stringify(prefs)); } catch { /* storage unavailable */ } notify('Preferences saved.'); onClose(); }}>Save</button></>}>
     <div className="px-checks">
       <label><input type="checkbox" checked={prefs.email} onChange={(e) => setPrefs({ ...prefs, email: e.target.checked })} /> Email me when an eSignature is completed</label>
       <label><input type="checkbox" checked={prefs.leads} onChange={(e) => setPrefs({ ...prefs, leads: e.target.checked })} /> Alert me on new online leads</label>

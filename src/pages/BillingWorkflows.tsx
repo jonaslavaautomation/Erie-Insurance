@@ -101,7 +101,10 @@ export function PaymentPage() {
     const problems: string[] = [];
     if (!account || !policy) problems.push('Select a policy.');
     if (amount <= 0) problems.push('Payment amount must be greater than $0.');
-    if (account && amount > account.balance + 0.001) problems.push(`Amount can’t exceed the remaining balance of ${money(account.balance, true)}.`);
+    // Payments already scheduled reduce what can still be paid or scheduled.
+    const scheduledTotal = (account?.scheduled ?? []).reduce((t, p) => t + p.amount, 0);
+    const available = account ? Math.max(0, account.balance - scheduledTotal) : 0;
+    if (account && amount > available + 0.001) problems.push(scheduledTotal > 0 ? `Amount can’t exceed ${money(available, true)} — ${money(scheduledTotal, true)} is already scheduled against the ${money(account.balance, true)} balance.` : `Amount can’t exceed the remaining balance of ${money(account.balance, true)}.`);
     if (payDate < today() || payDate > latestDate) problems.push(`Payment date must be between today and ${latestDate}.`);
     const resolved = policy ? resolveMethod(method, saved, policy.customerId) : { error: 'Select a policy.' };
     if (resolved.error) problems.push(resolved.error);

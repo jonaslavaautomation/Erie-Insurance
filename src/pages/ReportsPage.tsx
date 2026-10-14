@@ -21,7 +21,7 @@ function downloadCsv(name: string, rows: (string | number)[][]) {
   const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv' }));
   const link = document.createElement('a');
   link.href = url; link.download = `${name}-${today()}.csv`; link.click();
-  URL.revokeObjectURL(url);
+  window.setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
 // Single-series horizontal bar chart: one hue, value labels in text ink, per-bar hover tooltip.
@@ -60,10 +60,14 @@ export default function ReportsPage() {
   const customerName = (cid: string) => { const c = customers.find((x) => x.id === cid); return c ? fullName(c) : ''; };
 
   // Monthly new-business production: seeded history plus anything issued in this session.
-  const months = ['May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct'];
-  const seeded = [14200, 18650, 16900, 21400, 19800, 0];
-  const issuedThisSession = policies.filter((p) => p.quoteId).reduce((sum, p) => sum + p.premium, 0);
-  const production = months.map((m, i) => ({ name: `${m} 2026`, value: seeded[i] + (i === months.length - 1 ? issuedThisSession : 0) }));
+  const seededHistory: Record<string, number> = { '2026-05': 14200, '2026-06': 18650, '2026-07': 16900, '2026-08': 21400, '2026-09': 19800 };
+  const issuedMonth = (p: (typeof policies)[number]) => (p.history.find((h) => h.text.startsWith('New business issued'))?.date ?? p.effective).slice(0, 7);
+  const production = Array.from({ length: 6 }, (_, i) => {
+    const d = new Date(); d.setDate(1); d.setMonth(d.getMonth() - (5 - i));
+    const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+    const issued = policies.filter((p) => p.quoteId && issuedMonth(p) === key).reduce((sum, p) => sum + p.premium, 0);
+    return { name: d.toLocaleDateString('en-US', { month: 'short', year: 'numeric' }), value: (seededHistory[key] ?? 0) + issued };
+  });
 
   return <PortalLayout><main className="px-page">
     <PageTitle crumbs={[{ label: 'Reports' }]} title={active.label} subtitle={`As of ${today()} · Agency: ${AGENT.agency}`} />

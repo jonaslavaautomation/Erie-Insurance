@@ -26,10 +26,15 @@ export const INSTALLMENT_FEE = 3;
 
 const round = (value: number) => Math.round(value);
 const sum = (lines: PremiumLine[]) => lines.reduce((total, line) => total + line.amount, 0);
-const withTotal = (b: Omit<PremiumBreakdown, 'total'>, minimum = 0): PremiumBreakdown => ({ ...b, total: Math.max(minimum, sum(b.lines) + sum(b.discounts)) });
+export const MINIMUM_PREMIUM_LABEL = 'Minimum premium adjustment';
+const withTotal = (b: Omit<PremiumBreakdown, 'total'>, minimum = 0): PremiumBreakdown => {
+  const raw = sum(b.lines) + sum(b.discounts);
+  if (raw >= minimum) return { ...b, total: raw };
+  return { ...b, discounts: [...b.discounts, { label: MINIMUM_PREMIUM_LABEL, amount: minimum - raw }], total: minimum };
+};
 
 export function ageFrom(dob: string, asOf = new Date()) {
-  const birth = new Date(dob);
+  const birth = /^\d{4}-\d{2}-\d{2}$/.test(dob) ? new Date(`${dob}T00:00:00`) : new Date(dob);
   if (Number.isNaN(birth.getTime())) return 40;
   let age = asOf.getFullYear() - birth.getFullYear();
   const beforeBirthday = asOf.getMonth() < birth.getMonth() || (asOf.getMonth() === birth.getMonth() && asOf.getDate() < birth.getDate());
@@ -114,9 +119,10 @@ export function rateAuto(state: string, allDrivers: Driver[], vehicles: Vehicle[
     const comp = cov?.comp ?? coverages.comprehensiveDeductible;
     const coll = cov?.coll ?? coverages.collisionDeductible;
     lines.push({ ref, label: `${label} · Liability`, amount: round(310 * base * symLiab * tort * (biFactor[coverages.bodilyInjury] ?? 1) * (pdFactor[coverages.propertyDamage] ?? 1)) });
-    lines.push({ ref, label: `${label} · Uninsured/Underinsured Motorists`, amount: round(46 * territory * plan * tort * (biFactor[coverages.uninsuredMotorist] ?? 1)) });
+    lines.push({ ref, label: `${label} · Uninsured Motorists`, amount: round(30 * territory * plan * tort * (biFactor[coverages.uninsuredMotorist] ?? 1)) });
+    lines.push({ ref, label: `${label} · Underinsured Motorists`, amount: round(16 * territory * plan * tort * (biFactor[coverages.underinsuredMotorist ?? coverages.uninsuredMotorist] ?? 1)) });
     if (rule.firstParty && !(rule.firstParty.waivable && coverages.pipWaived)) lines.push({ ref, label: `${label} · ${rule.firstParty.label}`, amount: round((FIRST_PARTY_RATE[state] ?? 40) * territory * plan) });
-    if (medFactor[med]) lines.push({ ref, label: `${label} · Medical Payments`, amount: round(medFactor[med] * territory * plan) });
+    if (medFactor[med] && !rule.noFault) lines.push({ ref, label: `${label} · Medical Payments`, amount: round(medFactor[med] * territory * plan) });
     if (cov?.include === false) return;
     lines.push({ ref, label: `${label} · Comprehensive ($${comp} ded.)`, amount: round(118 * base * symPhys * physicalDamage * (compDed[comp] ?? 1)) });
     lines.push({ ref, label: `${label} · Collision ($${coll} ded.)`, amount: round(285 * base * symPhys * physicalDamage * (collDed[coll] ?? 1)) });
@@ -149,7 +155,7 @@ export function rateAuto(state: string, allDrivers: Driver[], vehicles: Vehicle[
 export const homeFormName: Record<HomeForm, string> = { 'HO-3': 'ErieSecure Home® (HO-3)', 'HO-4': 'Renters (HO-4)', 'HO-6': 'Condominium Unit-Owners (HO-6)', 'DP-3': 'Rental Dwelling / Landlord (DP-3)' };
 
 // HO-4, HO-6 and DP-3 forms. HO-3 is rated by rateHome below.
-function rateHomeForm(state: string, property: Property, c: HomeCoverages, form: Exclude<HomeForm, 'HO-3'>, options: { multiPolicy: boolean; earlyQuote: boolean }): PremiumBreakdown {
+function rateHomeForm(state: string, property: Property, c: HomeCoverages, form: Exclude<HomeForm, 'HO-3'>, options: { multiPolicy: boolean; earlyQuote: boolean; context?: HomeContext }): PremiumBreakdown {
   const territory = stateFactor[state] ?? 1;
   const dedFactor = ({ 500: 1.12, 1000: 1, 2500: 0.86, 5000: 0.76 } as Record<number, number>)[c.deductible] ?? 1;
   const protectionLoad = 0.88 + property.protectionClass * 0.035;
@@ -187,9 +193,11 @@ function rateHomeForm(state: string, property: Property, c: HomeCoverages, form:
   const subtotal = sum(lines);
   const discounts: PremiumLine[] = [];
   if (options.multiPolicy) discounts.push({ label: `Multi-policy discount (auto + home) — 15%`, amount: -round(subtotal * 0.15) });
-  const protective = [property.smokeAlarms, property.burglarAlarm, property.sprinklers].filter(Boolean).length;
+  const protective = (property.smokeAlarms ? 1 : 0) + (property.alarm === 'Central' || property.burglarAlarm ? 1 : property.alarm === 'Local' ? 0.5 : 0) + (property.sprinklers ? 1 : 0);
   if (protective) discounts.push({ label: 'Protective device discount', amount: -round(subtotal * 0.03 * protective) });
   if (options.earlyQuote) discounts.push({ label: 'Advance quote discount (7+ days)', amount: -round(subtotal * 0.04) });
+  if (options.context?.insuranceScoreHit) discounts.push({ label: 'Insurance score (favorable tier)', amount: -round(subtotal * 0.08) });
+  if (options.context?.propertyClaims) discounts.push({ label: `Prior property loss surcharge (${options.context.propertyClaims})`, amount: round(subtotal * 0.12 * options.context.propertyClaims) });
   // Small policies still carry a minimum premium.
   return withTotal({ product: 'Home', name: homeFormName[form], lines, discounts }, form === 'HO-4' ? 120 : 175);
 }
@@ -201,7 +209,7 @@ export function rateHome(state: string, property: Property, coverages: HomeCover
   if (form !== 'HO-3') return rateHomeForm(state, property, coverages, form, options);
   const territory = stateFactor[state] ?? 1;
   const age = Math.max(0, new Date().getFullYear() - property.yearBuilt);
-  const ageLoad = age > 60 ? 1.22 : age > 30 ? 1.1 : age < 10 ? 0.9 : 1;
+  const ageLoad = age > 60 ? 1.22 : age > 30 ? 1.1 : 1;
   const roofAge = new Date().getFullYear() - property.roofYear;
   const roofLoad = roofAge > 20 ? 1.18 : roofAge > 12 ? 1.06 : 1;
   const constructionLoad = property.construction === 'Frame' ? 1.06 : property.construction === 'Fire Resistive' ? 0.88 : 0.95;
@@ -328,7 +336,8 @@ export function installmentSchedule(total: number, plan: PayPlan, autoPay: boole
   const count = payPlanInstallments[plan];
   const fee = count > 1 && !autoPay ? INSTALLMENT_FEE : 0;
   const installment = Math.round((total / count) * 100) / 100;
-  return { count, installment, fee, perPayment: installment + fee, totalCost: Math.round((installment + fee) * count * 100) / 100 };
+  const last = Math.round((total - installment * (count - 1)) * 100) / 100;
+  return { count, installment, last, fee, perPayment: installment + fee, totalCost: Math.round((total + fee * count) * 100) / 100 };
 }
 
 // ---------------------------------------------------------------------------
@@ -367,6 +376,7 @@ function taxRate(state: string, key: QuoteLineKey) {
 }
 
 function applyCredit(b: PremiumBreakdown, label: string, pct: number): PremiumBreakdown {
+  if (b.discounts.some((d) => d.label === MINIMUM_PREMIUM_LABEL)) return b;
   const credit = -round(b.total * pct);
   return credit ? { ...b, discounts: [...b.discounts, { label, amount: credit }], total: b.total + credit } : b;
 }

@@ -79,8 +79,9 @@ export const contractorTrades: ContractorTrade[] = [
 
 // Older saved quotes used different class identifiers.
 export const LEGACY_CODES: Record<string, string> = {
-  59991: 'RET-FLOR', 56111: 'RET-CLOTH', 64071: 'OFF-CPA', 64111: 'OFF-INS', 80111: 'OFF-MED', 58121: '16910', 72311: 'SVC-SALON', 75381: 'SVC-AUTO', 58131: 'FOOD-BAR', 91551: '98678',
-  91111: '98482', 97653: '98305', 91580: '97047', 91342: '91340',
+  59991: 'RET-FLOR', 56111: 'RET-CLOTH', 64071: 'OFF-CPA', 64111: 'OFF-INS', 80111: 'OFF-MED', 58121: '16910', 72311: 'SVC-SALON', 75381: 'SVC-AUTO', 58131: 'FOOD-BAR',
+  // Former contractor codes saved as BOP classes have no BOP equivalent: the agent must reselect.
+  91551: '', 91111: '', 97653: '', 91580: '', 91342: '',
 };
 // 97047 was previously used for HVAC; trades keep that mapping only when the old label was HVAC.
 export const LEGACY_TRADES: Record<string, string> = { 91111: '98482', 97047: 'CON-HVAC', 97653: '98305', 91580: '97047', 91342: '91340', 98677: '98678' };
@@ -405,7 +406,7 @@ export function commercialValidation(c: CommercialDetails): string[] {
   if (b.revenue <= 0) p.push('Enter annual gross sales.');
   if ((b.protectionClass ?? 4) < 1 || (b.protectionClass ?? 4) > 10) p.push('Protection class must be 1–10.');
   if (c.lines.includes('bop')) {
-    if (!b.classCode) p.push('Ultrapack Plus: select a business class.');
+    if (!b.classCode || !businessClasses.some((x) => x.code === b.classCode)) p.push('Ultrapack Plus: select a business class.');
     if (b.bppLimit < 5000) p.push('Ultrapack Plus: business personal property must be at least $5,000.');
     if (b.squareFeet < 100) p.push('Ultrapack Plus: enter the occupied square footage.');
     const cls = businessClasses.find((x) => x.code === b.classCode);

@@ -1,5 +1,5 @@
 import { ReactNode, useEffect, useMemo, useRef, useState } from 'react';
-import { Link, useNavigate, useParams } from 'react-router-dom';
+import { Link, Navigate, useNavigate, useParams } from 'react-router-dom';
 import { AlertTriangle, Building2, Car, Check, CheckCircle2, Download, FileText, Heart, Home, Mail, Pencil, Plus, Printer, Sailboat, Save, ShieldCheck, Trash2, Umbrella, UserPlus, Wand2 } from 'lucide-react';
 import '@/product-page.css';
 import QuoteHeader from '@/components/QuoteHeader';
@@ -15,7 +15,7 @@ import { validCardExpiry } from '@/lib/validation';
 import { downloadDocument, openDocument, quoteProposalHtml } from '@/lib/documents';
 import type { Driver, Policy, PremiumBreakdown, ProductKey, Quote, Vehicle } from '@/data/types';
 import PersonalQuote from '@/pages/pl/PersonalQuote';
-import { PL_STEPS, PlStep } from '@/lib/personalLines';
+import { PL_STEPS, PlStep, stepComplete, stepsForQuote } from '@/lib/personalLines';
 
 type StepKey = 'underwriting' | 'drivers' | 'vehicles' | 'property' | 'coverages' | 'umbrella' | 'boat' | 'life' | 'commercial' | 'summary' | 'application' | 'issued';
 const stepLabels: Record<StepKey, string> = { underwriting: 'Customer Profile & Risk', drivers: 'Auto · Drivers', vehicles: 'Auto · Vehicles', property: 'Home · Property', coverages: 'Auto & Home Coverages', umbrella: 'Umbrella', boat: 'Boat', life: 'Life', commercial: 'Commercial Lines', summary: 'Summary & Bundle', application: 'Binder & Issue', issued: 'Issued' };
@@ -140,6 +140,9 @@ export default function QuoteWizard() {
 
   const update = (patch: Partial<Quote> | ((q: Quote) => Partial<Quote>)) => setDraft((current) => (current ? { ...current, ...(typeof patch === 'function' ? patch(current) : patch), updatedAt: new Date().toISOString() } : current));
   if (draft.flow === 'pl' && (PL_STEPS as string[]).includes(step)) return <PersonalQuote key={draft.id} quote={draft} step={step as PlStep} update={update} />;
+  // A personal lines quote can't reach the application while any quoting step is incomplete or unrated.
+  const plMissing = draft.flow === 'pl' && draft.status !== 'Issued' ? stepsForQuote(draft).find((s) => s !== 'coverages' && !stepComplete(draft, s)) : undefined;
+  if (plMissing && step !== 'issued') return <Navigate to={`/quotes/${draft.id}/${plMissing}`} replace />;
   const steps = stepsFor(draft);
   const currentStep = (steps.includes(step as StepKey) ? step : 'underwriting') as StepKey;
   const index = steps.indexOf(currentStep);

@@ -52,7 +52,7 @@ export function ClaimsListPage() {
   const open = claims.filter((c) => c.status !== 'Closed');
   return <PortalLayout><main className="px-page">
     <PageTitle crumbs={[{ label: 'Claims' }]} title="Claims Center" subtitle="Claims can be reported 24/7 here or at (800) 367-3743." actions={<Link className="px-btn" to="/claims/new"><Plus size={14} /> Report a claim</Link>} />
-    <div className="stat-row cards"><div><span>Open claims</span><strong>{open.length}</strong></div><div><span>Reserves outstanding</span><strong>{money(open.reduce((t, c) => t + Math.max(0, c.reserve - c.paid), 0))}</strong></div><div><span>Paid this year</span><strong>{money(claims.reduce((t, c) => t + c.paid, 0))}</strong></div><div><span>Awaiting inspection</span><strong>{claims.filter((c) => c.status === 'Inspection').length}</strong></div></div>
+    <div className="stat-row cards"><div><span>Open claims</span><strong>{open.length}</strong></div><div><span>Reserves outstanding</span><strong>{money(open.reduce((t, c) => t + Math.max(0, c.reserve - c.paid), 0))}</strong></div><div><span>Paid this year</span><strong>{money(claims.reduce((t, c) => t + (c.payments.length ? c.payments.filter((p) => p.date.startsWith(today().slice(0, 4))).reduce((x, p) => x + p.amount, 0) : c.lossDate.startsWith(today().slice(0, 4)) ? c.paid : 0), 0))}</strong></div><div><span>Awaiting inspection</span><strong>{claims.filter((c) => c.status === 'Inspection').length}</strong></div></div>
     <Panel>
       <div className="px-toolbar"><input className="px-search" value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Claim #, policy #, insured name" aria-label="Search claims" /><div className="px-chips">{[['all', 'All'], ['open', 'Open'], ['closed', 'Closed']].map(([id, label]) => <button key={id} type="button" className={status === id ? 'on' : ''} onClick={() => setParams(id === 'all' ? {} : { status: id })}>{label}</button>)}</div></div>
       {exact && <div className="px-note">Exact match: <Link to={`/claims/${exact.number}`}>{exact.number}</Link></div>}
@@ -88,7 +88,8 @@ export function ClaimReportPage() {
     if (step === 0 && (!policy || !claimable(policy))) problems.push('Select an active, non-life policy the loss is reported under.');
     if (step === 1) {
       if (!form.lossType) problems.push('Select the type of loss.');
-      if (form.lossDate > today()) problems.push('Loss date cannot be in the future.');
+      if (!form.lossDate) problems.push('Enter the date of loss.');
+      else if (form.lossDate > today()) problems.push('Loss date cannot be in the future.');
       if (!form.location.trim()) problems.push('Enter where the loss occurred.');
       if (form.description.trim().length < 15) problems.push('Describe what happened (at least 15 characters).');
     }

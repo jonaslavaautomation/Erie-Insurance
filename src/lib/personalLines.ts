@@ -143,7 +143,10 @@ export function vehicleErrors(v: Vehicle, drivers: Driver[]): Errors {
   if (!v.vin) e.vin = 'VIN is required';
   else if (!isValidVin(v.vin)) e.vin = 'VIN is invalid';
   if (!v.antiTheftDevice) e.antiTheftDevice = 'Anti-Theft is required';
-  if (!v.primaryOperatorId || !drivers.some((d) => d.id === v.primaryOperatorId)) e.primaryOperatorId = 'Primary Operator is required';
+  // Operators must be rated drivers: non-drivers and excluded drivers can't be assigned.
+  const operator = (id?: string) => drivers.some((d) => d.id === id && d.driverType !== 'Non-Driver' && d.driverType !== 'Excluded Driver');
+  if (!operator(v.primaryOperatorId)) e.primaryOperatorId = 'Primary Operator is required';
+  if (v.partTimeOperatorId && !operator(v.partTimeOperatorId)) e.partTimeOperatorId = 'Part-Time Operator must be an insured driver';
   if (!v.use) e.use = 'Primary Use is required';
   if (!v.daysPerWeek) e.daysPerWeek = 'Days Driven per Week is required';
   if (v.use === 'Commute' && !(v.milesToWork && v.milesToWork > 0)) e.milesToWork = 'Miles Driven to Work is required';
@@ -233,6 +236,9 @@ export function estimateDwelling(p: Property) {
 
 // ---- Reports ----------------------------------------------------------------------------------
 
+/** Changes to these details require reports to be re-ordered. */
+export const reportsKey = (q: Quote) => JSON.stringify([q.products, q.pl?.secondNamedInsuredId ?? '', q.drivers.map((d) => [d.id, d.firstName, d.lastName, d.dob, d.licenseState, d.licenseNumber, d.driverType])]);
+
 export function orderReports(q: Quote): ReportRow[] {
   const date = new Date().toISOString().slice(0, 10);
   const insureds = [q.drivers[0], q.drivers.find((d) => d.id === q.pl?.secondNamedInsuredId)].filter(Boolean) as Driver[];
@@ -250,8 +256,11 @@ export function orderReports(q: Quote): ReportRow[] {
 export function underwritingScores(q: Quote) {
   const chargeable = q.drivers.reduce((s, d) => s + d.accidents * 40 + d.violations * 25, 0);
   const auto = q.products.includes('auto') ? chargeable : 0;
-  const roofAge = new Date().getFullYear() - q.property.roofYear;
-  const home = q.products.includes('home') ? 120 + Math.max(0, roofAge) * 4 + (q.property.construction === 'Frame' ? 20 : 0) + Math.max(0, new Date().getFullYear() - q.property.yearBuilt - 40) : 0;
+  // Roof age applies to homeowners only; condominium and tenant forms don't rate the roof.
+  const ho3 = (q.homeCoverages.form ?? 'HO-3') === 'HO-3';
+  const roofAge = ho3 && q.property.roofYear > 0 ? new Date().getFullYear() - q.property.roofYear : 0;
+  const buildingAge = q.property.yearBuilt > 0 ? new Date().getFullYear() - q.property.yearBuilt : 0;
+  const home = q.products.includes('home') ? 120 + Math.max(0, roofAge) * 4 + (q.property.construction === 'Frame' ? 20 : 0) + Math.max(0, buildingAge - 40) : 0;
   return { auto, home, account: Math.max(auto, home) };
 }
 

@@ -164,6 +164,10 @@ export type PersonalLinesInfo = {
   convert: ProductKey[];
   // Insured location when it differs from the mailing address.
   location?: { address: string; city: string; state: string; zip: string };
+  // Products the agent unchecked under Products to Convert.
+  skip?: ProductKey[];
+  // Drivers / named insureds the current reports were ordered for.
+  reportsKey?: string;
 };
 
 export type HomeForm = 'HO-3' | 'HO-4' | 'HO-6' | 'DP-3';

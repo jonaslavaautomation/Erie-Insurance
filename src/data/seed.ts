@@ -1,5 +1,6 @@
 import type { AutoCoverages, BillingAccount, Mortgagee, PaymentMethod, BusinessDetails, CommercialAutoDetails, BoatDetails, Claim, CommercialDetails, Customer, Driver, Envelope, HomeCoverages, Lead, LifeDetails, Policy, Property, Quote, UmbrellaDetails, Vehicle } from '@/data/types';
 import { payPlanInstallments, rateAuto, rateHome } from '@/lib/rating';
+import { monthStep } from '@/lib/billing';
 import { rateCommercialAuto, rateCommercialProperty } from '@/data/commercial';
 
 // Sample data for the demo portal. None of these are real ERIE customers.
@@ -228,7 +229,7 @@ function account(policyNumber: string, paid: number, nextDueDate: string, method
   const policy = policies.find((p) => p.number === policyNumber)!;
   const count = payPlanInstallments[policy.payPlan];
   const installment = Math.round((policy.premium / count) * 100) / 100;
-  const monthsBetween = 12 / count;
+  const monthsBetween = monthStep(count);
   // AutoPay drafts on each due date, so installments that have come due since the data was written are posted.
   const dueAfter = (n: number) => { const d = new Date(`${firstPayment}T12:00:00`); d.setMonth(d.getMonth() + Math.round(n * monthsBetween)); return d.toISOString().slice(0, 10); };
   const now = new Date().toISOString().slice(0, 10);
@@ -340,7 +341,9 @@ policies.forEach((p) => { if (mortgageesByPolicy[p.number]) p.mortgagees = mortg
 
 // The Kowalski auto policy missed its first installment; ERIE has mailed a notice of cancellation.
 const kowalskiAuto = policies.find((p) => p.number === 'A05-1120456')!;
-kowalskiAuto.history = [{ date: '2026-09-25', text: `Notice of cancellation for non-payment mailed — cancels 2026-10-15 unless ${billing.find((b) => b.policyNumber === 'A05-1120456')!.minimumDue.toLocaleString('en-US', { style: 'currency', currency: 'USD' })} is received`, by: 'System' }, ...kowalskiAuto.history];
+// A fresh demo always shows this cancellation as still pending (at least 10 days out).
+const kowalskiCancel = (() => { const d = new Date(); d.setDate(d.getDate() + 10); const soon = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; return soon > '2026-10-15' ? soon : '2026-10-15'; })();
+kowalskiAuto.history = [{ date: '2026-09-25', text: `Notice of cancellation for non-payment mailed — cancels ${kowalskiCancel} unless ${billing.find((b) => b.policyNumber === 'A05-1120456')!.minimumDue.toLocaleString('en-US', { style: 'currency', currency: 'USD' })} is received`, by: 'System' }, ...kowalskiAuto.history];
 kowalskiAuto.documents = [{ name: 'Notice of Cancellation — Non-payment', date: '2026-09-25', kind: 'Notice' }, ...kowalskiAuto.documents];
 
 const paymentMethods: PaymentMethod[] = [

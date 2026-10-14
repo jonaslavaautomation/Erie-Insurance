@@ -4,7 +4,8 @@ import { lineOf, rateQuote, usePortal } from '@/data/store';
 import { AGENT, defaultLife } from '@/data/seed';
 import { openDocument, quoteProposalHtml } from '@/lib/documents';
 import { AUTO_SECURITY_OPTIONS, ageFrom, BI_OPTIONS, installmentSchedule, money, PAY_PLANS, payPlanLabel, PD_OPTIONS, rateLife, ROADSIDE_OPTIONS, UM_OPTIONS } from '@/lib/rating';
-import { defaultVehicleCoverage, personName, underwritingScores, usDate } from '@/lib/personalLines';
+import { defaultVehicleCoverage, dwellingErrors, personName, stepComplete, stepsForQuote, underwritingScores, usDate } from '@/lib/personalLines';
+import { CARRIERS } from '@/pages/pl/CustomerStep';
 import { umbrellaUnderlying } from '@/pages/QuoteSteps';
 import { autoLimitErrors, meetsBi, pdThousands, ruleFor, splitLimit } from '@/lib/stateRules';
 import type { AutoCoverages, HomeCoverages, PayPlan, PremiumBreakdown, ProductKey, RatingPlan, Vehicle, VehicleCoverage } from '@/data/types';
@@ -32,7 +33,7 @@ export default function CoveragesStep() {
   const change = (apply: () => void) => busy('One Moment Please...', apply, 650);
 
   const convertable = (['auto', 'home', 'umbrella'] as ProductKey[]).filter((p) => quote.products.includes(p));
-  const convert = pl.convert.length ? pl.convert : convertable;
+  const convert = convertable.filter((p) => !(pl.skip ?? []).includes(p));
   const total = convertable.filter((p) => convert.includes(p)).reduce((s, p) => s + premiumOf(p), 0);
 
   const lifeRows = [quote.drivers[0], quote.drivers.find((d) => d.id === pl.secondNamedInsuredId)].filter(Boolean).map((d) => ({ name: personName(d!), monthly: Math.round((rateLife(ageFrom(d!.dob), { ...defaultLife, faceAmount: 250000, term: 20, healthClass: 'Preferred', tobacco: false }).total / 12) * 100) / 100 }));
@@ -44,6 +45,13 @@ export default function CoveragesStep() {
   const toApplication = () => {
     const chosen = convertable.filter((p) => convert.includes(p));
     if (!chosen.length) { setConvertError('Select at least one product to convert.'); return; }
+    // Every quoting step must still be complete (coverage edits can invalidate the dwelling, for example).
+    const incomplete = stepsForQuote(quote).find((s) => s !== 'coverages' && !stepComplete(quote, s));
+    if (incomplete) {
+      const detail = incomplete === 'dwelling' ? Object.values(dwellingErrors(quote.property, quote.homeCoverages, quote.homePolicyType))[0] : '';
+      setConvertError(incomplete === 'reports' ? 'The quote changed since it was rated — return to REPORTS and RATE again.' : `${incomplete.toUpperCase()} is incomplete${detail ? `: ${detail}` : ''}. Fix it before converting.`);
+      return;
+    }
     const limitErrors = chosen.includes('auto') ? autoLimitErrors(quote.applicant.state, quote.autoCoverages) : [];
     if (limitErrors.length) { setConvertError(limitErrors[0]); setTab('auto'); return; }
     if (chosen.includes('home') && (quote.homeCoverages.form ?? 'HO-3') === 'HO-3' && quote.homeCoverages.personalLiability < 100000) { setConvertError('Home personal liability must be at least $100,000.'); setTab('home'); return; }
@@ -52,7 +60,11 @@ export default function CoveragesStep() {
       if (!u.autoOk || !u.homeOk) { setConvertError(`Umbrella underlying limits not met — ${!u.autoOk ? 'auto requires 250/500 BI and 100,000 PD' : 'home requires $300,000 personal liability'}. Raise the limits or uncheck Umbrella.`); setTab('umbrella'); return; }
     }
     busy('One Moment Please...', () => {
-      update((q) => ({ products: q.products.filter((p) => !(['auto', 'home', 'umbrella'] as ProductKey[]).includes(p) || chosen.includes(p)), status: 'Quote' }));
+      // Carry the Customer step's prior insurance into the application.
+      const carrier = pl.autoCarrier || pl.homeCarrier;
+      const priorCarrier = carrier === 'No Prior Insurance' ? 'No prior insurance' : carrier && ['American Family', 'Allstate', 'GEICO', 'Progressive', 'State Farm', 'Nationwide', 'Travelers'].includes(carrier) ? carrier : carrier && CARRIERS.includes(carrier) ? 'Other' : '';
+      const priorYears = Number((pl.autoYears.match(/\d+/) ?? ['0'])[0]);
+      update((q) => ({ products: q.products.filter((p) => !(['auto', 'home', 'umbrella'] as ProductKey[]).includes(p) || chosen.includes(p)), status: 'Quote', priorCarrier: q.priorCarrier || priorCarrier, priorYears: q.priorYears || priorYears }));
       notify(`Converting ${chosen.map((p) => productName[p]).join(', ')} to application.`);
       go('underwriting', true);
     }, 900);
@@ -82,7 +94,7 @@ export default function CoveragesStep() {
       <aside className="pl-cov-side">
         <div className="pl-side-card">
           <h3 className="blue">Products to Convert</h3>
-          {convertable.map((p) => <label key={p} className="pl-convert-row"><input type="checkbox" checked={convert.includes(p)} onChange={(e) => { setConvertError(''); setPl({ convert: e.target.checked ? [...convert, p] : convert.filter((x) => x !== p) }); }} /><span><strong>{productName[p]}</strong><small>Eff. {usDate(quote.effectiveDate)}</small></span><em>{dollars(premiumOf(p))}</em></label>)}
+          {convertable.map((p) => <label key={p} className="pl-convert-row"><input type="checkbox" checked={convert.includes(p)} onChange={(e) => { setConvertError(''); setPl({ skip: e.target.checked ? (pl.skip ?? []).filter((x) => x !== p) : [...(pl.skip ?? []), p] }); }} /><span><strong>{productName[p]}</strong><small>Eff. {usDate(quote.effectiveDate)}</small></span><em>{dollars(premiumOf(p))}</em></label>)}
           <div className="pl-convert-total"><strong>Total</strong><strong>{dollars(total)}</strong></div>
           <button type="button" className="pl-btn block" onClick={toApplication}>CONVERT TO APPLICATION</button>
           {convertError && <div className="pl-err-text">{convertError}</div>}
@@ -168,7 +180,7 @@ function AutoTab({ breakdown, change }: { breakdown: PremiumBreakdown | null | u
         <div className="pl-vehicle-head"><strong>{v.year} {v.make} {v.model}</strong>{op && <span> ({personName(op)})</span>}<em>{dollars(vehicleTotals[i])}</em></div>
         <div className="pl-collapse-row"><button type="button" className="pl-link" onClick={() => setClosed({ ...closed, [v.id]: !closed[v.id] })}>{closed[v.id] ? <PlusSquare size={12} /> : <MinusSquare size={12} />} Policy Coverages</button><span className="pl-yesno"><label><input type="radio" name={`inc-${v.id}`} checked={cov.include} onChange={() => setV(v.id, { include: true })} /> Include</label><label><input type="radio" name={`inc-${v.id}`} checked={!cov.include} onChange={() => setV(v.id, { include: false })} /> Exclude</label></span></div>
         {!closed[v.id] && <div className="pl-cov-rows">
-          <CovRow label="Medical Payments" price={dollars(net(lineFor(v, /Medical/)?.amount) ?? 0)}>{i === 0 ? <select aria-label="Medical Payments" value={cov.medPay} onChange={(e) => { const v = e.target.value; change(() => update((q) => ({ vehicles: q.vehicles.map((x) => ({ ...x, coverage: { ...(x.coverage ?? defaultVehicleCoverage()), medPay: v } })) }))); }}>{['None', '1,000', '5,000', '10,000'].map((o) => <option key={o}>{o}</option>)}</select> : <span>{cov.medPay}</span>}</CovRow>
+          <CovRow label="Medical Payments" price={rule.noFault ? '--' : dollars(net(lineFor(v, /Medical/)?.amount) ?? 0)}>{rule.noFault ? <span>Included in {rule.firstParty?.label.split(' (')[0].split(' — ')[0]}</span> : i === 0 ? <select aria-label="Medical Payments" value={cov.medPay} onChange={(e) => { const v = e.target.value; change(() => update((q) => ({ vehicles: q.vehicles.map((x) => ({ ...x, coverage: { ...(x.coverage ?? defaultVehicleCoverage()), medPay: v } })) }))); }}>{['None', '1,000', '5,000', '10,000'].map((o) => <option key={o}>{o}</option>)}</select> : <span>{cov.medPay}</span>}</CovRow>
           {cov.include ? <>
             <CovRow label="Comprehensive" price={dollars(net(lineFor(v, /Comprehensive/)?.amount) ?? 0)}><select aria-label={`Comprehensive ${v.make}`} value={cov.comp} onChange={(e) => setV(v.id, { comp: Number(e.target.value) })}>{[100, 250, 500, 1000].map((d) => <option key={d} value={d}>{d} Deductible</option>)}</select></CovRow>
             <CovRow label="Collision" price={dollars(net(lineFor(v, /Collision/)?.amount) ?? 0)}><select aria-label={`Collision ${v.make}`} value={cov.coll} onChange={(e) => setV(v.id, { coll: Number(e.target.value) })}>{[250, 500, 1000].map((d) => <option key={d} value={d}>{d} Deductible</option>)}</select></CovRow>

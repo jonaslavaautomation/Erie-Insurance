@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { validRouting } from '@/lib/billing';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { CreditCard, RefreshCcw } from 'lucide-react';
 import PortalLayout from '@/components/PortalLayout';
@@ -42,7 +43,9 @@ export function AutoPayPage() {
   const customer = policy ? customers.find((c) => c.id === policy.customerId) : undefined;
   const enroll = () => {
     if (!policy) return setError('Select a policy.');
-    if (!/^\d{9}$/.test(form.routing) || form.account.length < 4) return setError('Enter a 9-digit routing number and an account number.');
+    if (policy.status === 'Cancelled') return setError('AutoPay can’t be set up on a cancelled policy — reinstate it first.');
+    if (!validRouting(form.routing)) return setError('Routing number is not valid — check the 9-digit ABA number.');
+    if (!/^\d{4,17}$/.test(form.account)) return setError('Enter the bank account number (4–17 digits).');
     if (!form.authorized) return setError('The customer must authorize recurring withdrawals.');
     setAutoPay(policy.number, true, `${form.type} ••${form.account.slice(-4)}`);
     setForm(blankForm);

@@ -32,11 +32,14 @@ function billingYearStart(policy: BillingTerm, today = todayLocal()) {
   return start;
 }
 
+// The 9-pay plan bills 9 consecutive months; the others spread evenly over the year.
+export const monthStep = (count: number) => (count === 9 ? 1 : 12 / count);
+
 /** Installment due dates for the current billing year. */
 export function dueDates(policy: BillingTerm) {
   const count = payPlanInstallments[policy.payPlan];
   const start = billingYearStart(policy);
-  return Array.from({ length: count }, (_, i) => addMonths(start, Math.round((12 / count) * i)));
+  return Array.from({ length: count }, (_, i) => addMonths(start, Math.round(monthStep(count) * i)));
 }
 
 /**

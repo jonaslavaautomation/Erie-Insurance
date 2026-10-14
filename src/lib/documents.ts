@@ -20,6 +20,7 @@ const CUSTOMER_CARE = '(800) 458-0811';
 
 export const companyFor = (p: Policy) => (p.type === 'Life' ? COMPANIES.life : COMPANIES.exchange);
 
+const localToday = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; };
 const esc = (value: unknown) => String(value ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]!));
 const fullName = (c?: { firstName: string; middleName?: string; lastName: string }) => (c ? [c.firstName, c.middleName, c.lastName].filter(Boolean).join(' ') : '');
 const fmtDate = (iso: string) => (iso ? new Date(`${iso}T12:00:00`).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' }) : '');
@@ -129,7 +130,7 @@ export function idCardsHtml(policy: Policy, customer?: Customer) {
 // ---- Declarations page ------------------------------------------------------------------------
 
 /** Itemized premium lines for a policy, reconciled to the stored premium. */
-export function policyBreakdown(policy: Policy, state: string): PremiumBreakdown | null {
+export function policyBreakdown(policy: Policy, state: string, dob?: string): PremiumBreakdown | null {
   const opts = { multiPolicy: false, payPlan: policy.payPlan, autoPay: policy.autoPay, earlyQuote: false };
   if (policy.type === 'Auto' && policy.autoCoverages) return rateAuto(state, policy.drivers, policy.vehicles, policy.autoCoverages, opts);
   if (policy.type === 'Home' && policy.property && policy.homeCoverages) return rateHome(state, policy.property, policy.homeCoverages, opts);
@@ -144,12 +145,12 @@ export function policyBreakdown(policy: Policy, state: string): PremiumBreakdown
     if (policy.contractors) return rateContractors(policy.contractors, policy.business, policy.business.state);
     return rateBusiness(policy.business);
   }
-  if (policy.type === 'Life' && policy.life) return rateLife(40, policy.life);
+  if (policy.type === 'Life' && policy.life) return rateLife(dob ? ageFrom(dob) : 40, policy.life);
   return null;
 }
 
-function premiumTable(policy: Policy, state: string) {
-  const b = policyBreakdown(policy, state);
+function premiumTable(policy: Policy, state: string, dob?: string) {
+  const b = policyBreakdown(policy, state, dob);
   if (!b || !b.lines.length) return `<table><tbody><tr class="total"><td>Total annual premium</td><td class="num">${money(policy.premium, true)}</td></tr></tbody></table>`;
   const adjustment = Math.round((policy.premium - b.total) * 100) / 100;
   return `<table><thead><tr><th>Coverage</th><th class="num">Premium</th></tr></thead><tbody>
@@ -191,7 +192,7 @@ export function decPageHtml(policy: Policy, customer?: Customer) {
     <div class="grid" style="margin-top:12px">${insuredBlock(customer)}${agentBlock(policy)}
       <div><span>Policy period</span>${fmtDate(policy.effective)} to ${fmtDate(policy.expiration)}<br>12:01 a.m. standard time at the insured's address</div>
       <div><span>Payment plan</span>${esc(payPlanLabel[policy.payPlan])}${policy.autoPay ? ' · EriePay AutoPay' : ''}<br>Status: ${esc(policy.status)}</div></div>
-    <h2>Coverages, limits & premium</h2>${premiumTable(policy, state)}
+    <h2>Coverages, limits & premium</h2>${premiumTable(policy, state, customer?.dob)}
     ${schedules(policy)}
     <h2>Forms & endorsements attached</h2><table><tbody>${forms.map((f) => `<tr><td>${esc(f)}</td></tr>`).join('')}</tbody></table>
     ${endorsements.length ? `<h2>Policy changes this term</h2><table><thead><tr><th>Effective</th><th>Change</th><th class="num">Pro-rata premium</th></tr></thead><tbody>${endorsements.map((e) => `<tr><td>${fmtDate(e.effective)}</td><td>${esc(e.description)}</td><td class="num">${e.proRata >= 0 ? '+' : '−'}${money(Math.abs(e.proRata), true)}</td></tr>`).join('')}</tbody></table>` : ''}
@@ -210,7 +211,7 @@ export function evidenceOfInsuranceHtml(policy: Policy, customer: Customer | und
     ? `<tr><td>Dwelling (Coverage A)</td><td>${h.form === 'HO-4' ? 'Not applicable (renters)' : money(h.dwelling)}${h.form === 'HO-3' || !h.form ? ' · Guaranteed Replacement Cost' : ''}</td></tr><tr><td>Deductible</td><td>${money(h.deductible)} all perils</td></tr><tr><td>Form / causes of loss</td><td>${esc(h.form ?? 'HO-3')} · special form (open perils) on the dwelling</td></tr>`
     : policy.business ? `<tr><td>Building</td><td>${money(policy.business.buildingLimit)}</td></tr><tr><td>Deductible</td><td>${money(policy.business.propertyDeductible)}</td></tr>`
     : vehicle ? `<tr><td>Vehicle</td><td>${esc(`${vehicle.year} ${vehicle.make} ${vehicle.model}`)} · VIN ${esc(vehicle.vin)}</td></tr><tr><td>Comprehensive / collision deductibles</td><td>${money(policy.autoCoverages?.comprehensiveDeductible ?? 0)} / ${money(policy.autoCoverages?.collisionDeductible ?? 0)}</td></tr>` : '';
-  const body = `<div class="sheet">${header(isProperty ? 'Evidence of Property Insurance' : 'Evidence of Auto Physical Damage Insurance', `Issued ${fmtDate(new Date().toISOString().slice(0, 10))}`, company)}
+  const body = `<div class="sheet">${header(isProperty ? 'Evidence of Property Insurance' : 'Evidence of Auto Physical Damage Insurance', `Issued ${fmtDate(localToday())}`, company)}
     <p class="note">This evidence of insurance is issued as a matter of information only and confers no rights upon the additional interest named below. It does not amend, extend or alter the coverage afforded by the policy.</p>
     <div class="grid" style="margin-top:8px">${agentBlock(policy)}<div><span>Company</span>${esc(company.name)}<br>NAIC ${company.naic}<br>Policy ${esc(policy.number)}</div>
       ${insuredBlock(customer)}<div><span>Policy period</span>${fmtDate(policy.effective)} to ${fmtDate(policy.expiration)}<br>Continued until terminated if checked: ☑</div></div>
@@ -228,7 +229,7 @@ export function quoteProposalHtml(quote: Quote, rated: ErieQuoteResult, schedule
   const savings = -rated.bundleCredits.reduce((t, c) => t + c.amount, 0);
   const body = `<div class="sheet">${header('Insurance Proposal', `Quote ${quote.id} · valid 30 days`)}
     <div class="grid" style="margin-top:12px"><div><span>Prepared for</span>${esc(fullName(a))}<br>${esc(a.address)}<br>${esc(`${a.city}, ${a.state} ${a.zip}`)}</div>${agentBlock()}
-      <div><span>Proposed effective date</span>${fmtDate(quote.effectiveDate)}</div><div><span>Prepared</span>${fmtDate(new Date().toISOString().slice(0, 10))} by ${esc(AGENT.name)}</div></div>
+      <div><span>Proposed effective date</span>${fmtDate(quote.effectiveDate)}</div><div><span>Prepared</span>${fmtDate(localToday())} by ${esc(AGENT.name)}</div></div>
     ${rated.lines.map((l) => `<h2>${esc(l.breakdown.name ?? l.breakdown.product)}</h2><table><tbody>${l.breakdown.lines.map((x) => `<tr><td>${esc(x.label)}</td><td class="num">${money(x.amount)}</td></tr>`).join('')}${l.breakdown.discounts.map((d) => `<tr class="credit"><td>${esc(d.label)}</td><td class="num">−${money(-d.amount)}</td></tr>`).join('')}<tr class="total"><td>Annual premium</td><td class="num">${money(l.breakdown.total)}</td></tr></tbody></table>`).join('')}
     <h2>Multi-policy bundle</h2><table><tbody>${rated.bundleCredits.length ? rated.bundleCredits.map((c) => `<tr class="credit"><td>${esc(c.label)}</td><td class="num">−${money(-c.amount)}</td></tr>`).join('') : '<tr><td>No bundle credits on this proposal.</td><td></td></tr>'}<tr class="total"><td>Total multi-policy savings</td><td class="num">${money(savings)}</td></tr></tbody></table>
     <h2>Account total & payment options</h2><table><tbody><tr><td>Premium, all lines</td><td class="num">${money(rated.premium)}</td></tr>${rated.taxes.map((t) => `<tr><td>${esc(t.label)}</td><td class="num">${money(t.amount)}</td></tr>`).join('')}<tr class="total"><td>Total annual cost</td><td class="num">${money(rated.total)}</td></tr></tbody></table>
@@ -240,7 +241,7 @@ export function quoteProposalHtml(quote: Quote, rated: ErieQuoteResult, schedule
 // ---- Billing statement & reinstatement notice -----------------------------------------------
 
 export function billingStatementHtml(policy: Policy, customer: Customer | undefined, account: BillingAccount, rows: Installment[] = installmentSchedule(policy, account)) {
-  const body = `<div class="sheet">${header('Billing Statement', `${policy.number} · ${fmtDate(new Date().toISOString().slice(0, 10))}`, companyFor(policy))}
+  const body = `<div class="sheet">${header('Billing Statement', `${policy.number} · ${fmtDate(localToday())}`, companyFor(policy))}
     <div class="grid" style="margin-top:12px">${insuredBlock(customer, 'Bill to')}<div><span>Account summary</span>Payment plan: ${esc(payPlanLabel[policy.payPlan])}${policy.autoPay ? ' (EriePay AutoPay)' : ''}<br>Minimum due: <strong>${money(account.minimumDue, true)}</strong> by ${fmtDate(account.nextDueDate)}<br>Remaining term balance: ${money(account.balance, true)}</div></div>
     <h2>Installment schedule</h2><table><thead><tr><th>#</th><th>Due date</th><th class="num">Amount</th><th class="num">Paid</th><th>Status</th></tr></thead><tbody>${rows.map((r) => `<tr><td>${r.n}</td><td>${fmtDate(r.due)}</td><td class="num">${money(r.amount, true)}</td><td class="num">${money(r.paid, true)}</td><td><span class="stamp ${r.status.split(' ')[0]}">${r.status}</span></td></tr>`).join('')}</tbody></table>
     <h2>Payment history</h2><table><thead><tr><th>Date</th><th>Type</th><th>Method</th><th>Confirmation</th><th class="num">Amount</th></tr></thead><tbody>${account.payments.length ? account.payments.map((p) => `<tr><td>${fmtDate(p.date)}</td><td>${esc(p.kind ?? 'Installment')}</td><td>${esc(p.method)}</td><td>${esc(p.confirmation)}</td><td class="num">${money(p.amount, true)}</td></tr>`).join('') : '<tr><td colspan="5">No payments this term.</td></tr>'}</tbody></table>

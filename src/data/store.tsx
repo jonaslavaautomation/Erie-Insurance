@@ -8,6 +8,10 @@ import { AGENT, createSeed, defaultAutoCoverages, defaultBoat, defaultCommercial
 import type { AutoCoverages, BillingAccount, BusinessDetails, Claim, ClaimStatus, CommercialDetails, CommercialLine, ContractorsDetails, Customer, Envelope, HomeCoverages, Lead, Payment, PaymentMethod, Policy, PolicyDocument, PolicyEndorsement, PolicyType, PremiumBreakdown, Quote, Toast } from '@/data/types';
 
 const STORAGE_KEY = 'erie-agentexchange-demo-v1';
+const DELETED_KEY = 'erie-quotes-pending-delete';
+const SYNCED_KEY = 'erie-quotes-synced';
+const readIds = (key: string): string[] => { try { return JSON.parse(localStorage.getItem(key) ?? '[]') as string[]; } catch { return []; } };
+const writeIds = (key: string, ids: Set<string>) => { try { localStorage.setItem(key, JSON.stringify([...ids])); } catch { /* storage unavailable */ } };
 
 // Local calendar date (toISOString is UTC, which rolls over to tomorrow in the US evening).
 const localDate = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
@@ -89,6 +93,39 @@ export function normalizeQuote(q: Quote): Quote {
   };
 }
 
+/**
+ * Brings saved data up to today: pending cancellations whose date has passed are cancelled,
+ * expired terms renew, and AutoPay drafts installments that have come due.
+ */
+export function rollForward(d: PortalData): PortalData {
+  const now = today();
+  const policies = d.policies.map((p): Policy => {
+    if (p.status === 'Pending Cancel') {
+      const date = cancelDateOf(p);
+      if (date && date <= now) return { ...p, status: 'Cancelled', history: [{ date, text: `Policy cancelled${isNonPaymentCancel(p) ? ' for non-payment' : ''} effective ${date}`, by: 'System' }, ...p.history] };
+    }
+    if (p.status === 'Active' && p.type !== 'Life' && p.expiration < now) {
+      let { effective, expiration } = p;
+      while (expiration < now) { effective = expiration; expiration = addYears(expiration, 1); }
+      return { ...p, effective, expiration, history: [{ date: effective, text: `Policy renewed for the term ${effective} to ${expiration}`, by: 'System' }, ...p.history] };
+    }
+    return p;
+  });
+  const billing = d.billing.map((b) => {
+    const p = policies.find((x) => x.number === b.policyNumber);
+    if (!p || !p.autoPay || p.status === 'Cancelled') return b;
+    let acc = b;
+    for (let guard = 0; guard < 24 && acc.balance > 0 && acc.nextDueDate && acc.nextDueDate <= now; guard += 1) {
+      const amount = Math.min(acc.balance, acc.minimumDue || acc.balance);
+      if (!(amount > 0)) break;
+      const payment: Payment = { id: `${b.policyNumber}-AP-${acc.nextDueDate}`, date: acc.nextDueDate, amount, method: 'AutoPay', confirmation: `EP-${acc.nextDueDate.replace(/-/g, '')}${b.policyNumber.slice(-4)}`, policyNumber: b.policyNumber, kind: 'Installment' };
+      acc = { ...acc, ...afterPayment(p, acc, amount), payments: [payment, ...acc.payments] };
+    }
+    return acc;
+  });
+  return { ...d, policies, billing };
+}
+
 function loadData(): PortalData {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
@@ -96,19 +133,19 @@ function loadData(): PortalData {
       // Activity saved under the previous account owner is re-attributed to the current one.
       const data = JSON.parse(raw.split('Guttenberg').join('Lindqvist').split('1968-07-14').join('1967-11-02').split('Vito Bitanghol').join(AGENT.name).split('Bitanghol Insurance Agency, LLC').join(AGENT.agency)) as PortalData;
       // Quotes saved before newer product lines existed get default details.
-      return {
+      return rollForward({
         ...data,
         quotes: data.quotes.map(normalizeQuote),
         policies: data.policies.map((p) => ({ ...p, autoCoverages: migrateAuto(p.autoCoverages), homeCoverages: migrateHome(p.homeCoverages), business: migrateBusiness(p.business), contractors: migrateContractors(p.contractors) })),
         claims: data.claims.map((c) => ({ ...c, status: LEGACY_CLAIM_STATUS[c.status as string] ?? c.status })),
         paymentMethods: data.paymentMethods ?? createSeed().paymentMethods,
         billing: applyScheduled(data.billing, data.policies),
-      };
+      } as PortalData);
     }
   } catch {
     // Storage can be unavailable (private mode); fall back to seed data.
   }
-  return createSeed();
+  return rollForward(createSeed());
 }
 
 export function newQuoteDraft(applicant: Quote['applicant'], customerId?: string): Quote {
@@ -169,7 +206,8 @@ export function rateQuote(quote: Quote, existing: Policy[] = [], payPlan = quote
   const others = existing.filter((p) => p.status !== 'Cancelled' && p.quoteId !== quote.id);
   const holds = (t: PolicyType) => others.some((p) => p.type === t);
   const multiPolicy = (has('auto') || holds('Auto')) && (has('home') || holds('Home')) && (has('auto') || has('home'));
-  const daysOut = (new Date(quote.effectiveDate).getTime() - Date.now()) / 86400000;
+  const quotedOn = new Date(`${(quote.createdAt || today()).slice(0, 10)}T00:00:00`);
+  const daysOut = (new Date(`${quote.effectiveDate}T00:00:00`).getTime() - quotedOn.getTime()) / 86400000;
   const state = quote.applicant.state;
   // Insurance score results from the Reports step feed the rating tier.
   const scoreHit = (kind: 'Auto' | 'Property') => !!quote.pl?.reports.some((r) => r.report === `Insurance Score (${kind})` && r.status === 'Hit');
@@ -267,33 +305,46 @@ export function PortalStoreProvider({ children }: { children: ReactNode }) {
   const [syncError, setSyncError] = useState('');
   const [lastSynced, setLastSynced] = useState('');
   const pushed = useRef(new Map<string, string>());
-  const pendingDeletes = useRef(new Set<string>());
+  // Deletions waiting to reach Supabase and quotes known to exist there survive reloads.
+  const pendingDeletes = useRef(new Set<string>(readIds(DELETED_KEY)));
+  const syncedIds = useRef(new Set<string>(readIds(SYNCED_KEY)));
   const remoteReady = useRef(false);
 
   useEffect(() => {
     if (!supabase) return;
     let active = true;
-    void (async () => {
+    let attempt = 0;
+    let retry = 0;
+    const load = async () => {
       try {
-        const remote = await loadRemoteQuotes();
+        const remote = (await loadRemoteQuotes()).filter((q) => !pendingDeletes.current.has(q.id));
         if (!active) return;
+        const remoteIds = new Set(remote.map((q) => q.id));
         remote.forEach((q) => pushed.current.set(q.id, q.updatedAt));
-        // The newer copy of each quote wins; quotes saved from other browsers are added.
         setData((current) => {
           const byId = new Map(current.quotes.map((q) => [q.id, q]));
+          // A quote this browser saved before that is no longer in Supabase was deleted elsewhere.
+          current.quotes.forEach((q) => { if (syncedIds.current.has(q.id) && !remoteIds.has(q.id)) byId.delete(q.id); });
+          // The newer copy of each quote wins; quotes saved from other browsers are added.
           remote.map(normalizeQuote).forEach((q) => { const local = byId.get(q.id); if (!local || (q.updatedAt ?? '') > (local.updatedAt ?? '')) byId.set(q.id, q); });
           return { ...current, quotes: [...byId.values()].sort((a, b) => (b.updatedAt ?? '').localeCompare(a.updatedAt ?? '')) };
         });
+        syncedIds.current = remoteIds;
+        writeIds(SYNCED_KEY, remoteIds);
         remoteReady.current = true;
         setSyncStatus('saved');
+        setSyncError('');
         setLastSynced(nowIso());
       } catch (e) {
         if (!active) return;
         setSyncStatus('error');
         setSyncError(e instanceof Error ? e.message : String((e as { message?: string })?.message ?? e));
+        // Keep trying: 10 s, 30 s, then every minute.
+        retry = window.setTimeout(() => { void load(); }, [10000, 30000][attempt++] ?? 60000);
       }
-    })();
-    return () => { active = false; };
+    };
+    void load();
+    return () => { active = false; window.clearTimeout(retry); };
   }, []);
 
   useEffect(() => {
@@ -312,9 +363,11 @@ export function PortalStoreProvider({ children }: { children: ReactNode }) {
             try { total = rated && q.products.length ? rateQuote(q, others.filter((p) => p.customerId === q.customerId)).total : null; } catch { total = null; }
             return quoteRow(q, total);
           }));
-          changed.forEach((q) => pushed.current.set(q.id, q.updatedAt));
+          changed.forEach((q) => { pushed.current.set(q.id, q.updatedAt); syncedIds.current.add(q.id); });
           await deleteRemoteQuotes(deletes);
-          deletes.forEach((id) => { pendingDeletes.current.delete(id); pushed.current.delete(id); });
+          deletes.forEach((id) => { pendingDeletes.current.delete(id); pushed.current.delete(id); syncedIds.current.delete(id); });
+          writeIds(DELETED_KEY, pendingDeletes.current);
+          writeIds(SYNCED_KEY, syncedIds.current);
           setSyncStatus('saved');
           setSyncError('');
           setLastSynced(nowIso());
@@ -344,6 +397,7 @@ export function PortalStoreProvider({ children }: { children: ReactNode }) {
 
   const deleteQuotes = useCallback((ids: string[]) => {
     ids.forEach((id) => pendingDeletes.current.add(id));
+    writeIds(DELETED_KEY, pendingDeletes.current);
     setData((current) => ({ ...current, quotes: current.quotes.filter((q) => !ids.includes(q.id)) }));
   }, []);
   const archiveQuotes = useCallback((ids: string[], archived: boolean) => setData((current) => ({ ...current, quotes: current.quotes.map((q) => {
@@ -371,7 +425,8 @@ export function PortalStoreProvider({ children }: { children: ReactNode }) {
       }
       const newPolicies: Policy[] = [];
       const newBilling: BillingAccount[] = [];
-      const rated = rateQuote(quote, current.policies.filter((p) => p.customerId === customerId));
+      // Rate exactly as quoted: only the linked customer's policies count toward multi-policy credits.
+      const rated = rateQuote(quote, quote.customerId ? current.policies.filter((p) => p.customerId === quote.customerId) : []);
       const line = (key: QuoteLineKey) => rated.lines.find((l) => l.key === key);
       const productOf: Partial<Record<PolicyType, Quote['products'][number]>> = { Auto: 'auto', Home: 'home', Umbrella: 'umbrella', Boat: 'boat', Life: 'life', Business: 'commercial', 'Commercial Auto': 'commercial', 'Workers Comp': 'commercial' };
       // Each policy is billed its bundled premium plus its share of state premium taxes.
@@ -396,15 +451,19 @@ export function PortalStoreProvider({ children }: { children: ReactNode }) {
       make('Business', 'commercial:umbrella', { business: biz, policyForm: 'Commercial Umbrella', description: `Commercial Umbrella · $${(quote.commercial.umbrella?.limit ?? 1000000).toLocaleString()} · ${biz.businessName}` });
       make('Boat', 'boat', { boat: quote.boat, description: `${quote.boat.year} ${quote.boat.make} ${quote.boat.model} · ${quote.boat.length} ft · ${quote.boat.horsepower} HP` });
       make('Life', 'life', { life: quote.life, expiration: addYears(quote.effectiveDate, quote.life.term), status: quote.underwriting._approved === 'yes' ? 'Pending Issue' : 'Active', description: `ERIExpress Life · ${quote.life.term}-year term · $${quote.life.faceAmount.toLocaleString()} face` });
-      const next: PortalData = {
-        ...current,
-        customers,
-        policies: [...newPolicies, ...current.policies],
-        billing: [...newBilling, ...current.billing],
-        quotes: current.quotes.map((q) => (q.id === id ? { ...q, customerId, status: 'Issued', issuedPolicies: [...issued], updatedAt: nowIso() } : q)),
-      };
-      dataRef.current = next;
-      setData(next);
+      // Functional update: keeps changes queued earlier in the same click (quote save, eSignature envelope).
+      setData((latest) => {
+        const known = new Set(latest.customers.map((c) => c.id));
+        const next: PortalData = {
+          ...latest,
+          customers: [...latest.customers, ...customers.filter((c) => !known.has(c.id))],
+          policies: [...newPolicies, ...latest.policies],
+          billing: [...newBilling, ...latest.billing],
+          quotes: latest.quotes.map((q) => (q.id === id ? { ...q, customerId, status: 'Issued', issuedPolicies: [...issued], updatedAt: nowIso() } : q)),
+        };
+        dataRef.current = next;
+        return next;
+      });
     }
     return issued;
   }, []);
@@ -510,7 +569,7 @@ export function PortalStoreProvider({ children }: { children: ReactNode }) {
   const addEnvelope = useCallback((envelope: Omit<Envelope, 'id' | 'sent' | 'status'>) => setData((current) => ({ ...current, envelopes: [{ ...envelope, id: `ES-${randomDigits(5)}`, sent: today(), status: 'Sent' }, ...current.envelopes] })), []);
   const updateEnvelope = useCallback((id: string, status: Envelope['status']) => setData((current) => ({ ...current, envelopes: current.envelopes.map((e) => (e.id === id ? { ...e, status, sent: status === 'Sent' ? today() : e.sent } : e)) })), []);
   const resetDemo = useCallback(() => {
-    setData(createSeed());
+    setData(rollForward(createSeed()));
     // Work items marked done refer to seed records, so they come back with the reset.
     try { localStorage.removeItem('erie-agentexchange-dismissed-work'); } catch { /* storage unavailable */ }
     window.dispatchEvent(new Event('erie-work-dismissed'));

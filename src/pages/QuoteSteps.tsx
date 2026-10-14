@@ -21,8 +21,11 @@ export type UnderlyingCheck = { autoOk: boolean; homeOk: boolean; autoText: stri
 
 /** Verifies the umbrella's required underlying limits from this quote, in-force ERIE policies, or another carrier. */
 export function umbrellaUnderlying(quote: Quote, existing: Policy[]): UnderlyingCheck {
-  const erieAuto = existing.find((p) => p.type === 'Auto' && p.status !== 'Cancelled' && p.autoCoverages);
-  const erieHome = existing.find((p) => p.type === 'Home' && p.status !== 'Cancelled' && p.homeCoverages);
+  // Check every in-force ERIE policy; the first one that falls short is the one reported.
+  const autos = existing.filter((p) => p.type === 'Auto' && p.status !== 'Cancelled' && p.autoCoverages);
+  const homes = existing.filter((p) => p.type === 'Home' && p.status !== 'Cancelled' && p.homeCoverages);
+  const erieAuto = autos.find((p) => !meetsUmbrellaAutoMinimum(p.autoCoverages!.bodilyInjury, p.autoCoverages!.propertyDamage)) ?? autos[0];
+  const erieHome = homes.find((p) => p.homeCoverages!.personalLiability < UMBRELLA_HOME_MINIMUM) ?? homes[0];
   const u = quote.umbrella;
   let autoOk = true; let autoText = 'No auto exposure'; let autoSource: UnderlyingCheck['autoSource'] = 'none';
   if (quote.products.includes('auto')) { autoSource = 'quote'; autoOk = meetsUmbrellaAutoMinimum(quote.autoCoverages.bodilyInjury, quote.autoCoverages.propertyDamage); autoText = `This quote: BI ${quote.autoCoverages.bodilyInjury} · PD $${quote.autoCoverages.propertyDamage}`; }
@@ -46,13 +49,13 @@ export function UmbrellaStep({ quote, update, existing, rated }: { quote: Quote;
     <div className="plan-grid">{[1, 2, 3, 4, 5].map((m) => <label key={m} className={`plan ${u.limit === m * 1000000 ? 'on' : ''}`}><input type="radio" checked={u.limit === m * 1000000} onChange={() => set('limit', m * 1000000)} /><strong>${m},000,000</strong></label>)}</div>
     <h2 className="section-h">Exposures</h2>
     <div className="px-grid3">
-      <Field label="Autos (all household)"><input type="number" min={0} value={u.autoExposures} onChange={(e) => set('autoExposures', Number(e.target.value))} /></Field>
-      <Field label="Operators under 25"><input type="number" min={0} value={u.youthfulOperators} onChange={(e) => set('youthfulOperators', Number(e.target.value))} /></Field>
-      <Field label="Residences owned or rented"><input type="number" min={0} value={u.residences} onChange={(e) => set('residences', Number(e.target.value))} /></Field>
-      <Field label="Watercraft"><input type="number" min={0} value={u.watercraft} onChange={(e) => set('watercraft', Number(e.target.value))} /></Field>
-      <Field label="Recreational vehicles (golf carts, ATVs)"><input type="number" min={0} value={u.recreationalVehicles} onChange={(e) => set('recreationalVehicles', Number(e.target.value))} /></Field>
+      <Field label="Autos (all household)"><input type="number" min={0} value={u.autoExposures} onChange={(e) => set('autoExposures', Math.max(0, Number(e.target.value)))} /></Field>
+      <Field label="Operators under 25"><input type="number" min={0} value={u.youthfulOperators} onChange={(e) => set('youthfulOperators', Math.max(0, Number(e.target.value)))} /></Field>
+      <Field label="Residences owned or rented"><input type="number" min={0} value={u.residences} onChange={(e) => set('residences', Math.max(0, Number(e.target.value)))} /></Field>
+      <Field label="Watercraft"><input type="number" min={0} value={u.watercraft} onChange={(e) => set('watercraft', Math.max(0, Number(e.target.value)))} /></Field>
+      <Field label="Recreational vehicles (golf carts, ATVs)"><input type="number" min={0} value={u.recreationalVehicles} onChange={(e) => set('recreationalVehicles', Math.max(0, Number(e.target.value)))} /></Field>
     </div>
-    <button type="button" className="link-button" onClick={() => update({ umbrella: { ...u, autoExposures: Math.max(quote.vehicles.length, check.erieAuto?.vehicles.length ?? 0, u.autoExposures), youthfulOperators: quote.drivers.filter((d) => d.dob && ageFrom(d.dob) < 25).length, watercraft: quote.products.includes('boat') ? Math.max(1, u.watercraft) : u.watercraft } })}>Fill exposures from this quote and in-force policies</button>
+    <button type="button" className="link-button" onClick={() => update({ umbrella: { ...u, autoExposures: Math.max(quote.vehicles.length + existing.filter((p) => p.type === 'Auto' && p.status !== 'Cancelled').reduce((t, p) => t + p.vehicles.length, 0), u.autoExposures), youthfulOperators: quote.drivers.filter((d) => d.dob && ageFrom(d.dob) < 25).length, watercraft: quote.products.includes('boat') ? Math.max(1, u.watercraft) : u.watercraft } })}>Fill exposures from this quote and in-force policies</button>
     <h2 className="section-h">Underlying limits verification</h2>
     <Check ok={check.autoOk}>Auto — requires 250/500/100 or 500 CSL. <strong>{check.autoText}</strong>
       {!check.autoOk && check.autoSource === 'quote' && <button type="button" className="px-btn small" onClick={() => update({ autoCoverages: { ...quote.autoCoverages, bodilyInjury: '250/500', propertyDamage: '100,000', uninsuredMotorist: '250/500' } })}>Raise to 250/500/100</button>}
@@ -63,7 +66,7 @@ export function UmbrellaStep({ quote, update, existing, rated }: { quote: Quote;
       {!check.homeOk && check.homeSource === 'quote' && <button type="button" className="px-btn small" onClick={() => update({ homeCoverages: { ...quote.homeCoverages, personalLiability: 300000 } })}>Raise to $300,000</button>}
       {!check.homeOk && check.homeSource === 'erie' && check.erieHome && <Link className="px-btn small" to={`/policies/${check.erieHome.number}`}>Policy change on {check.erieHome.number}</Link>}
     </Check>
-    {check.homeSource === 'other' && <Field label="Other carrier personal liability"><select value={u.otherHomeLiability} onChange={(e) => set('otherHomeLiability', Number(e.target.value))}><option value={0}>-- Select --</option>{[100000, 300000, 500000, 1000000].map((o) => <option key={o} value={o}>{money(o)}</option>)}</select></Field>}
+    {check.homeSource === 'other' && <Field label="Other carrier personal liability"><select value={u.otherHomeLiability} onChange={(e) => set('otherHomeLiability', Math.max(0, Number(e.target.value)))}><option value={0}>-- Select --</option>{[100000, 300000, 500000, 1000000].map((o) => <option key={o} value={o}>{money(o)}</option>)}</select></Field>}
   </>;
 }
 
@@ -92,10 +95,10 @@ export function CommercialStep({ quote, update, rated }: { quote: Quote; update:
       <Field label="Legal business name" required className="span2"><input value={b.businessName} onChange={(e) => setB('businessName', e.target.value)} /></Field>
       <Field label="Entity type"><select value={b.entity} onChange={(e) => setB('entity', e.target.value as BusinessDetails['entity'])}><option>LLC</option><option>Corporation</option><option>Sole Proprietor</option><option>Partnership</option></select></Field>
       <Field label="FEIN"><input value={b.fein} onChange={(e) => setB('fein', e.target.value)} placeholder="12-3456789" /></Field>
-      <Field label="Years in business" hint={b.yearsInBusiness < 1 ? 'New ventures refer to underwriting' : undefined}><input type="number" min={0} value={b.yearsInBusiness} onChange={(e) => setB('yearsInBusiness', num(e.target.value))} /></Field>
-      <Field label="Employees"><input type="number" min={0} value={b.employees} onChange={(e) => setB('employees', num(e.target.value))} /></Field>
-      <Field label="Annual gross sales"><input type="number" step={10000} value={b.revenue} onChange={(e) => setB('revenue', num(e.target.value))} /></Field>
-      <Field label="Annual payroll" hint="Rating basis for contractors and payroll-rated classes"><input type="number" step={10000} value={b.payroll} onChange={(e) => setB('payroll', num(e.target.value))} /></Field>
+      <Field label="Years in business" hint={b.yearsInBusiness < 1 ? 'New ventures refer to underwriting' : undefined}><input type="number" min={0} value={b.yearsInBusiness} onChange={(e) => setB('yearsInBusiness', Math.max(0, num(e.target.value)))} /></Field>
+      <Field label="Employees"><input type="number" min={0} value={b.employees} onChange={(e) => setB('employees', Math.max(0, num(e.target.value)))} /></Field>
+      <Field label="Annual gross sales"><input type="number" step={10000} value={b.revenue} onChange={(e) => setB('revenue', Math.max(0, num(e.target.value)))} /></Field>
+      <Field label="Annual payroll" hint="Rating basis for contractors and payroll-rated classes"><input type="number" step={10000} value={b.payroll} onChange={(e) => setB('payroll', Math.max(0, num(e.target.value)))} /></Field>
       <Field label="General liability limits"><select value={b.glLimit} onChange={(e) => setB('glLimit', e.target.value as BusinessDetails['glLimit'])}><option value="1M/2M">$1M occurrence / $2M aggregate</option><option value="2M/4M">$2M occurrence / $4M aggregate</option></select></Field>
       <Field label="Business location" required className="span2"><input value={b.address} onChange={(e) => setB('address', e.target.value)} /></Field>
       <Field label="City"><input value={b.city} onChange={(e) => setB('city', e.target.value)} /></Field>
@@ -106,9 +109,9 @@ export function CommercialStep({ quote, update, rated }: { quote: Quote; update:
     <h2 className="section-h">Prior insurance &amp; loss history (5 years)</h2>
     <div className="px-grid3">
       <Field label="Prior carrier"><input value={b.priorCarrier ?? ''} onChange={(e) => setB('priorCarrier', e.target.value)} placeholder="None if new venture" /></Field>
-      <Field label="Years with prior carrier"><input type="number" min={0} value={b.priorYears ?? 0} onChange={(e) => setB('priorYears', num(e.target.value))} /></Field>
-      <Field label="Number of losses" hint={(b.lossCount5yr ?? 0) >= 3 ? '3 or more losses refer to underwriting' : undefined}><input type="number" min={0} value={b.lossCount5yr ?? 0} onChange={(e) => setB('lossCount5yr', num(e.target.value))} /></Field>
-      <Field label="Total incurred losses" hint={(b.lossIncurred5yr ?? 0) > 50000 ? 'Over $50,000 refers to underwriting' : undefined}><input type="number" min={0} step={1000} value={b.lossIncurred5yr ?? 0} onChange={(e) => setB('lossIncurred5yr', num(e.target.value))} /></Field>
+      <Field label="Years with prior carrier"><input type="number" min={0} value={b.priorYears ?? 0} onChange={(e) => setB('priorYears', Math.max(0, num(e.target.value)))} /></Field>
+      <Field label="Number of losses" hint={(b.lossCount5yr ?? 0) >= 3 ? '3 or more losses refer to underwriting' : undefined}><input type="number" min={0} value={b.lossCount5yr ?? 0} onChange={(e) => setB('lossCount5yr', Math.max(0, num(e.target.value)))} /></Field>
+      <Field label="Total incurred losses" hint={(b.lossIncurred5yr ?? 0) > 50000 ? 'Over $50,000 refers to underwriting' : undefined}><input type="number" min={0} step={1000} value={b.lossIncurred5yr ?? 0} onChange={(e) => setB('lossIncurred5yr', Math.max(0, num(e.target.value)))} /></Field>
     </div>
 
     <h2 className="section-h">Commercial lines</h2>
@@ -133,17 +136,17 @@ function BopSection({ b, setB, patch, rated }: { b: BusinessDetails; setB: <K ex
     <div className="px-grid3">
       <Field label="Business class" required className="span2"><select value={b.classCode} onChange={(e) => setB('classCode', e.target.value)}><option value="">-- Select class --</option>{[...new Set(businessClasses.map((x) => x.group))].map((g) => <optgroup key={g} label={g}>{businessClasses.filter((x) => x.group === g).map((x) => <option key={x.code} value={x.code}>{x.label}{x.iso ? ` (ISO ${x.iso})` : ''}{x.appetite === 'no' ? ' — not eligible' : x.appetite === 'refer' ? ' — referral' : ''}</option>)}</optgroup>)}</select></Field>
       <Field label="GL premium basis"><input readOnly value={cls ? `${cls.basis === 'sales' ? 'Gross sales' : cls.basis === 'payroll' ? 'Payroll' : 'Area'} — ${basisLabel[cls.basis]}` : '—'} /></Field>
-      <Field label="Occupied sq. ft." hint={`BOP limit ${BOP_LIMITS.squareFeet.toLocaleString()} sq ft`}><input type="number" step={100} value={b.squareFeet} onChange={(e) => setB('squareFeet', num(e.target.value))} /></Field>
+      <Field label="Occupied sq. ft." hint={`BOP limit ${BOP_LIMITS.squareFeet.toLocaleString()} sq ft`}><input type="number" step={100} value={b.squareFeet} onChange={(e) => setB('squareFeet', Math.max(0, num(e.target.value)))} /></Field>
       <Field label="Stories" hint={`BOP limit ${BOP_LIMITS.stories}`}><input type="number" min={1} value={b.stories ?? 1} onChange={(e) => setB('stories', Math.max(1, num(e.target.value)))} /></Field>
       <Field label="Construction (ISO)"><select value={b.construction} onChange={(e) => setB('construction', e.target.value as BusinessDetails['construction'])}>{CONSTRUCTION_CLASSES.map((x, i) => <option key={x} value={x}>{i + 1} — {x}</option>)}</select></Field>
-      <Field label="Protection class (1–10)" hint="ISO public protection class for the location"><input type="number" min={1} max={10} value={b.protectionClass ?? 4} onChange={(e) => setB('protectionClass', num(e.target.value))} /></Field>
+      <Field label="Protection class (1–10)" hint="ISO public protection class for the location"><input type="number" min={1} max={10} value={b.protectionClass ?? 4} onChange={(e) => setB('protectionClass', Math.max(0, num(e.target.value)))} /></Field>
       <Field label="Fire alarm"><select value={b.alarm} onChange={(e) => setB('alarm', e.target.value as BusinessDetails['alarm'])}><option>None</option><option>Local</option><option>Central Station</option></select></Field>
       <Field label="Valuation"><select value={b.valuation ?? 'Replacement Cost'} onChange={(e) => setB('valuation', e.target.value as BusinessDetails['valuation'])}><option>Replacement Cost</option><option>Actual Cash Value</option></select></Field>
       <Field label="Coinsurance"><select value={b.coinsurance ?? 90} onChange={(e) => setB('coinsurance', Number(e.target.value) as BusinessDetails['coinsurance'])}>{[80, 90, 100].map((x) => <option key={x} value={x}>{x}%</option>)}</select></Field>
-      <Field label="Business personal property"><input type="number" step={5000} value={b.bppLimit} onChange={(e) => setB('bppLimit', num(e.target.value))} /></Field>
+      <Field label="Business personal property"><input type="number" step={5000} value={b.bppLimit} onChange={(e) => setB('bppLimit', Math.max(0, num(e.target.value)))} /></Field>
       <Field label="Property deductible"><select value={b.propertyDeductible} onChange={(e) => setB('propertyDeductible', Number(e.target.value))}>{[500, 1000, 2500, 5000, 10000].map((d) => <option key={d} value={d}>{money(d)}</option>)}</select></Field>
       <Field label="Wind/hail deductible"><select value={b.windHailPct ?? 0} onChange={(e) => setB('windHailPct', Number(e.target.value) as BusinessDetails['windHailPct'])}><option value={0}>Same as property deductible</option>{[1, 2, 5].map((x) => <option key={x} value={x}>{x}% of building value</option>)}</select></Field>
-      {b.ownsBuilding && <Field label="Building limit" hint={`Estimated replacement cost ${money(suggestedBuildingLimit(b))}`}><input type="number" step={5000} value={b.buildingLimit} onChange={(e) => setB('buildingLimit', num(e.target.value))} /></Field>}
+      {b.ownsBuilding && <Field label="Building limit" hint={`Estimated replacement cost ${money(suggestedBuildingLimit(b))}`}><input type="number" step={5000} value={b.buildingLimit} onChange={(e) => setB('buildingLimit', Math.max(0, num(e.target.value)))} /></Field>}
     </div>
     {cls && <p className="px-muted">{cls.note}</p>}
     {short && <div className="underlying bad"><XCircle size={16} /><span>Building limit is below {b.coinsurance ?? 90}% of estimated replacement cost ({money(short.required)}). <button type="button" className="px-btn small" onClick={() => setB('buildingLimit', short.replacement)}>Insure to {money(short.replacement)}</button></span></div>}
@@ -168,10 +171,10 @@ function ContractorsSection({ v, set, b, rated }: { v: ContractorsDetails; set: 
     <div className="px-grid3">
       <Field label="Trade" required className="span2"><select value={v.trade} onChange={(e) => s('trade', e.target.value)}><option value="">-- Select trade --</option>{contractorTrades.map((t) => <option key={t.code} value={t.code}>{t.label}{t.iso ? ` (ISO ${t.iso})` : ''}{t.appetite === 'no' ? ' — not eligible' : t.appetite === 'refer' ? ' — referral' : ''}</option>)}</select></Field>
       <Field label="GL premium basis"><input readOnly value={`Payroll ${money(b.payroll)} — per $1,000`} /></Field>
-      <Field label="Work subcontracted (%)" hint={v.subcontractedPct > 50 ? 'Over 50% refers to underwriting' : 'Certificates of insurance required from subs'}><input type="number" min={0} max={100} value={v.subcontractedPct} onChange={(e) => s('subcontractedPct', num(e.target.value))} /></Field>
-      <Field label="Contractors equipment floater"><input type="number" step={5000} value={v.equipmentFloater} onChange={(e) => s('equipmentFloater', num(e.target.value))} /></Field>
-      <Field label="Installation floater (per job)"><input type="number" step={5000} value={v.installationFloater} onChange={(e) => s('installationFloater', num(e.target.value))} /></Field>
-      <Field label="Tools & small equipment"><input type="number" step={1000} value={v.toolsLimit} onChange={(e) => s('toolsLimit', num(e.target.value))} /></Field>
+      <Field label="Work subcontracted (%)" hint={v.subcontractedPct > 50 ? 'Over 50% refers to underwriting' : 'Certificates of insurance required from subs'}><input type="number" min={0} max={100} value={v.subcontractedPct} onChange={(e) => s('subcontractedPct', Math.max(0, num(e.target.value)))} /></Field>
+      <Field label="Contractors equipment floater"><input type="number" step={5000} value={v.equipmentFloater} onChange={(e) => s('equipmentFloater', Math.max(0, num(e.target.value)))} /></Field>
+      <Field label="Installation floater (per job)"><input type="number" step={5000} value={v.installationFloater} onChange={(e) => s('installationFloater', Math.max(0, num(e.target.value)))} /></Field>
+      <Field label="Tools & small equipment"><input type="number" step={1000} value={v.toolsLimit} onChange={(e) => s('toolsLimit', Math.max(0, num(e.target.value)))} /></Field>
     </div>
     <label className="px-checks"><input type="checkbox" checked={v.additionalInsuredBlanket} onChange={(e) => s('additionalInsuredBlanket', e.target.checked)} /> Blanket additional insured — owners, lessees or contractors</label>
   </div>;
@@ -189,7 +192,7 @@ function CommercialAutoSection({ v, set, rated }: { v: CommercialAutoDetails; se
       <Field label="Uninsured / underinsured motorists"><select value={v.uninsuredMotorist ?? 'None'} onChange={(e) => s('uninsuredMotorist', e.target.value as CommercialAutoDetails['uninsuredMotorist'])}><option>None</option><option>500,000 CSL</option><option>1,000,000 CSL</option></select></Field>
       <Field label="Medical payments"><select value={v.medicalPayments ?? 0} onChange={(e) => s('medicalPayments', Number(e.target.value))}><option value={0}>None</option>{[5000, 10000].map((m) => <option key={m} value={m}>{money(m)} each person</option>)}</select></Field>
       <Field label="Physical damage deductible"><select value={v.physicalDamageDeductible} onChange={(e) => s('physicalDamageDeductible', Number(e.target.value))}>{[500, 1000, 2500].map((d) => <option key={d} value={d}>{money(d)}</option>)}</select></Field>
-      {v.garagekeepers && <Field label="Garagekeepers limit"><input type="number" step={10000} value={v.garagekeepersLimit} onChange={(e) => s('garagekeepersLimit', num(e.target.value))} /></Field>}
+      {v.garagekeepers && <Field label="Garagekeepers limit"><input type="number" step={10000} value={v.garagekeepersLimit} onChange={(e) => s('garagekeepersLimit', Math.max(0, num(e.target.value)))} /></Field>}
     </div>
     <div className="px-checks inline"><label><input type="checkbox" checked={v.garagekeepers} onChange={(e) => s('garagekeepers', e.target.checked)} /> Garagekeepers liability (customers’ vehicles in your care)</label><label><input type="checkbox" checked={v.hiredNonOwned} onChange={(e) => s('hiredNonOwned', e.target.checked)} /> Hired &amp; non-owned auto</label></div>
     <h3 className="mini-h">Vehicles <button type="button" className="link-button" onClick={addVehicle}><Plus size={13} /> Add vehicle</button></h3>
@@ -202,15 +205,15 @@ function CommercialAutoSection({ v, set, rated }: { v: CommercialAutoDetails; se
         return 'gvw' in patch && next.bodyType !== 'Private Passenger' ? { ...next, bodyType: sizeClass(next.gvw, next.bodyType === 'Truck-Tractor') } : next;
       }));
       return <tr key={x.id}>
-        <td><input type="number" value={x.year} onChange={(e) => upd({ year: num(e.target.value) })} aria-label="Year" /></td>
+        <td><input type="number" value={x.year} onChange={(e) => upd({ year: Math.max(0, num(e.target.value)) })} aria-label="Year" /></td>
         <td><input value={x.make} onChange={(e) => upd({ make: e.target.value })} aria-label="Make" /></td>
         <td><input value={x.model} onChange={(e) => upd({ model: e.target.value })} aria-label="Model" /></td>
         <td><input value={x.vin ?? ''} maxLength={17} onChange={(e) => upd({ vin: e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, '') })} aria-label="VIN" className="vin" /></td>
-        <td><input type="number" step={500} value={x.gvw ?? 0} onChange={(e) => upd({ gvw: num(e.target.value) })} aria-label="GVW" /></td>
+        <td><input type="number" step={500} value={x.gvw ?? 0} onChange={(e) => upd({ gvw: Math.max(0, num(e.target.value)) })} aria-label="GVW" /></td>
         <td><input type="checkbox" checked={x.bodyType === 'Truck-Tractor'} onChange={(e) => s('vehicles', v.vehicles.map((y, j) => (j === i ? { ...y, bodyType: sizeClass(y.gvw, e.target.checked) } : y)))} aria-label="Truck-tractor" /></td>
         <td><select value={x.bodyType} onChange={(e) => s('vehicles', v.vehicles.map((y, j) => (j === i ? { ...y, bodyType: e.target.value as typeof x.bodyType } : y)))} aria-label="Size class">{['Private Passenger', 'Light Truck', 'Medium Truck', 'Heavy Truck', 'Extra-Heavy Truck', 'Truck-Tractor'].map((o) => <option key={o}>{o}</option>)}</select></td>
         <td><select value={x.use ?? 'Service'} onChange={(e) => upd({ use: e.target.value as NonNullable<typeof x.use> })} aria-label="Use">{['Service', 'Retail', 'Commercial'].map((o) => <option key={o}>{o}</option>)}</select></td>
-        <td><input type="number" step={1000} value={x.costNew} onChange={(e) => upd({ costNew: num(e.target.value) })} aria-label="Cost new" /></td>
+        <td><input type="number" step={1000} value={x.costNew} onChange={(e) => upd({ costNew: Math.max(0, num(e.target.value)) })} aria-label="Cost new" /></td>
         <td><select value={x.radius} onChange={(e) => upd({ radius: e.target.value as typeof x.radius })} aria-label="Radius">{['Local (0–50 mi)', 'Intermediate (51–200 mi)', 'Long Haul (200+ mi)'].map((o) => <option key={o}>{o}</option>)}</select></td>
         <td className="row-actions"><button type="button" onClick={() => s('vehicles', v.vehicles.filter((_, j) => j !== i))} aria-label="Remove vehicle"><Trash2 size={14} /></button></td>
       </tr>;
@@ -219,7 +222,7 @@ function CommercialAutoSection({ v, set, rated }: { v: CommercialAutoDetails; se
     {needsCdl && <p className="px-muted">A unit is 26,001 lb or more — every listed driver must hold a commercial driver’s license (CDL).</p>}
     {v.drivers.length === 0 ? <p className="px-muted">No drivers yet.</p> : <table className="px-table edit-table"><thead><tr><th>Name</th><th>Age</th><th>Years licensed</th><th>CDL</th><th>Violations (3 yr)</th><th>At-fault accidents</th><th /></tr></thead><tbody>{v.drivers.map((x, i) => {
       const upd = (patch: Partial<typeof x>) => s('drivers', v.drivers.map((y, j) => (j === i ? { ...y, ...patch } : y)));
-      return <tr key={x.id}><td><input value={x.name} onChange={(e) => upd({ name: e.target.value })} aria-label="Driver name" /></td><td><input type="number" value={x.age} onChange={(e) => upd({ age: num(e.target.value) })} aria-label="Age" /></td><td><input type="number" min={0} value={x.yearsLicensed ?? 10} onChange={(e) => upd({ yearsLicensed: num(e.target.value) })} aria-label="Years licensed" /></td><td><input type="checkbox" checked={!!x.cdl} onChange={(e) => upd({ cdl: e.target.checked })} aria-label="CDL" /></td><td><input type="number" min={0} value={x.violations} onChange={(e) => upd({ violations: num(e.target.value) })} aria-label="Violations" /></td><td><input type="number" min={0} value={x.accidents} onChange={(e) => upd({ accidents: num(e.target.value) })} aria-label="Accidents" /></td><td className="row-actions"><button type="button" onClick={() => s('drivers', v.drivers.filter((_, j) => j !== i))} aria-label="Remove driver"><Trash2 size={14} /></button></td></tr>;
+      return <tr key={x.id}><td><input value={x.name} onChange={(e) => upd({ name: e.target.value })} aria-label="Driver name" /></td><td><input type="number" value={x.age} onChange={(e) => upd({ age: Math.max(0, num(e.target.value)) })} aria-label="Age" /></td><td><input type="number" min={0} value={x.yearsLicensed ?? 10} onChange={(e) => upd({ yearsLicensed: Math.max(0, num(e.target.value)) })} aria-label="Years licensed" /></td><td><input type="checkbox" checked={!!x.cdl} onChange={(e) => upd({ cdl: e.target.checked })} aria-label="CDL" /></td><td><input type="number" min={0} value={x.violations} onChange={(e) => upd({ violations: Math.max(0, num(e.target.value)) })} aria-label="Violations" /></td><td><input type="number" min={0} value={x.accidents} onChange={(e) => upd({ accidents: Math.max(0, num(e.target.value)) })} aria-label="Accidents" /></td><td className="row-actions"><button type="button" onClick={() => s('drivers', v.drivers.filter((_, j) => j !== i))} aria-label="Remove driver"><Trash2 size={14} /></button></td></tr>;
     })}</tbody></table>}
   </div>;
 }
@@ -230,13 +233,13 @@ function WorkersCompSection({ v, set, state, rated }: { v: WorkersCompDetails; s
     <h2><HardHat size={16} /> Workers’ Compensation <LinePremium rated={rated} lineKey="commercial:workersComp" /></h2>
     <p className="px-muted">{state === 'WI' ? `Wisconsin WCRB filed rates effective ${WC_RATES_EFFECTIVE}, $${WC_EXPENSE_CONSTANT} expense constant.` : `Rates shown for ${state} are illustrative — derived from Wisconsin filed rates; each state files its own.`} Premium discount is tiered on standard premium over $10,000.</p>
     <div className="px-grid3">
-      <Field label="Experience modification (E-Mod)" hint={v.experienceMod > 1.25 ? 'E-Mod over 1.25 refers to underwriting' : undefined}><input type="number" step={0.01} min={0.5} max={2} value={v.experienceMod} onChange={(e) => s('experienceMod', num(e.target.value))} /></Field>
+      <Field label="Experience modification (E-Mod)" hint={v.experienceMod > 1.25 ? 'E-Mod over 1.25 refers to underwriting' : undefined}><input type="number" step={0.01} min={0.5} max={2} value={v.experienceMod} onChange={(e) => s('experienceMod', Math.max(0, num(e.target.value)))} /></Field>
       <Field label="Employers liability"><select value={v.employersLiability} onChange={(e) => s('employersLiability', e.target.value as WorkersCompDetails['employersLiability'])}><option>100/500/100</option><option>500/500/500</option><option>1M/1M/1M</option></select></Field>
     </div>
     <h3 className="mini-h">Classifications <button type="button" className="link-button" onClick={() => s('classes', [...v.classes, { id: `WC${Date.now()}`, code: wcClasses.find((w) => !v.classes.some((x) => x.code === w.code))?.code ?? '8810', payroll: 50000 }])}><Plus size={13} /> Add class</button></h3>
     {v.classes.length === 0 ? <p className="px-muted">Add each class code with its estimated annual payroll.</p> : <table className="px-table edit-table"><thead><tr><th>Class code</th><th>Rate per $100</th><th>Estimated annual payroll</th><th /></tr></thead><tbody>{v.classes.map((x, i) => {
       const upd = (patch: Partial<typeof x>) => s('classes', v.classes.map((y, j) => (j === i ? { ...y, ...patch } : y)));
-      return <tr key={x.id}><td><select value={x.code} onChange={(e) => upd({ code: e.target.value })} aria-label="Class code">{wcClasses.map((w) => <option key={w.code} value={w.code}>{w.code} — {w.label}</option>)}</select></td><td>{wcClasses.find((w) => w.code === x.code)?.rate.toFixed(3) ?? '—'}{state === 'WI' ? '' : '*'}</td><td><input type="number" step={5000} value={x.payroll} onChange={(e) => upd({ payroll: num(e.target.value) })} aria-label="Payroll" /></td><td className="row-actions"><button type="button" onClick={() => s('classes', v.classes.filter((_, j) => j !== i))} aria-label="Remove class"><Trash2 size={14} /></button></td></tr>;
+      return <tr key={x.id}><td><select value={x.code} onChange={(e) => upd({ code: e.target.value })} aria-label="Class code">{wcClasses.map((w) => <option key={w.code} value={w.code}>{w.code} — {w.label}</option>)}</select></td><td>{wcClasses.find((w) => w.code === x.code)?.rate.toFixed(3) ?? '—'}{state === 'WI' ? '' : '*'}</td><td><input type="number" step={5000} value={x.payroll} onChange={(e) => upd({ payroll: Math.max(0, num(e.target.value)) })} aria-label="Payroll" /></td><td className="row-actions"><button type="button" onClick={() => s('classes', v.classes.filter((_, j) => j !== i))} aria-label="Remove class"><Trash2 size={14} /></button></td></tr>;
     })}</tbody></table>}
   </div>;
 }
