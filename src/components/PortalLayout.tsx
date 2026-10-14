@@ -57,8 +57,8 @@ export default function PortalLayout({ children }: { children: ReactNode }) {
       <header className="topbar">
         <div className="topbar-inner">
           <Link to="/" className="brand" aria-label="Erie Insurance AgentExchange home">
-            <div className="erie-mark"><span>⌂</span></div>
-            <div className="brand-copy"><strong>Erie</strong><small>Insurance</small></div>
+            <img className="brand-logo" src="/favicon-192.png" alt="" />
+            <div className="brand-copy"><strong>LAVA</strong><small>Insurance</small></div>
             <div className="exchange"><span>Agent</span>Exchange</div>
           </Link>
           <form className="global-search" onSubmit={handleSearch} role="search">
@@ -84,8 +84,8 @@ export default function PortalLayout({ children }: { children: ReactNode }) {
 
       <footer className="px-footer">
         <div className="px-footer-inner">
-          <span>AgentExchange demo portal · sample data only — not connected to ERIE systems</span>
-          <nav><Link to="/contacts">ERIE Contacts</Link><Link to="/resources/about-erie">About ERIE</Link><Link to="/resources/forms-on-demand">Forms</Link><Link to="/resources/claims-guide">Claims guide</Link></nav>
+          <span>AgentExchange demo portal · sample data only — not connected to any insurance carrier</span>
+          <nav><Link to="/contacts">LAVA Contacts</Link><Link to="/resources/about-erie">About LAVA</Link><Link to="/resources/forms-on-demand">Forms</Link><Link to="/resources/claims-guide">Claims guide</Link></nav>
         </div>
       </footer>
     </div>

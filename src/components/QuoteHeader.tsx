@@ -20,7 +20,7 @@ export default function QuoteHeader({ quote }: { quote?: Quote }) {
   const { syncStatus, syncError, lastSynced } = usePortal();
   return <header className="quote-topbar">
     <button className="quote-brand" onClick={() => navigate('/')} type="button" aria-label="Back to dashboard">
-      <span className="quote-erie-mark">⌂</span><span className="quote-brand-name">Erie<small>Insurance</small></span>
+      <img className="quote-brand-logo" src="/favicon-192.png" alt="" /><span className="quote-brand-name">LAVA<small>Insurance</small></span>
     </button>
     <div className="quote-header-actions">
       <span className={`sync-status ${syncStatus}`} role="status" title={syncStatus === 'error' ? syncError : lastSynced ? `Last saved ${new Date(`${lastSynced}Z`).toLocaleTimeString()}` : undefined}><i />{syncText[syncStatus]}</span>

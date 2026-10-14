@@ -107,7 +107,7 @@ export function ContactsPage() {
   useEffect(() => setQuery(q), [q]);
   const rows = contacts.filter((c) => `${c.name} ${c.title} ${c.department}`.toLowerCase().includes(q.toLowerCase()));
   return <PortalLayout><main className="px-page">
-    <PageTitle crumbs={[{ label: 'ERIE Contacts' }]} title="ERIE Contacts" subtitle="Phone directory for underwriting, claims, billing and agency support." />
+    <PageTitle crumbs={[{ label: 'LAVA Contacts' }]} title="LAVA Contacts" subtitle="Phone directory for underwriting, claims, billing and agency support." />
     <Panel><form className="px-toolbar" onSubmit={(e) => { e.preventDefault(); setParams(query ? { q: query } : {}); }}><input className="px-search" value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Name, title, or department" aria-label="Search directory" /><button type="submit" className="px-btn"><Search size={14} /> Search</button>{q && <button type="button" className="link-button" onClick={() => { setQuery(''); setParams({}); }}>Clear</button>}</form>
       {rows.length === 0 ? <Empty>No contacts match “{q}”.</Empty> : <div className="contact-grid">{rows.map((c) => <div key={c.name} className="contact-card"><strong>{c.name}</strong><span>{c.title}</span><small>{c.department}</small><a href={telHref(c.phone)}><Phone size={13} /> {c.phone}</a><a href={`mailto:${c.email}`}><Mail size={13} /> {c.email}</a></div>)}</div>}
     </Panel>
@@ -163,7 +163,7 @@ export function LoginPage() {
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const submit = (e: FormEvent) => { e.preventDefault(); if (!user || password.length < 4) return setError('Enter your user ID and password.'); navigate('/'); };
-  return <div className="login-page"><form className="login-card" onSubmit={submit}><div className="brand"><div className="erie-mark"><span>⌂</span></div><div className="brand-copy"><strong>Erie</strong><small>Insurance</small></div><div className="exchange"><span>Agent</span>Exchange</div></div><h1>Sign in</h1><p className="px-muted"><CheckCircle2 size={13} /> You have been signed out.</p><Field label="User ID"><input value={user} onChange={(e) => setUser(e.target.value)} autoComplete="username" /></Field><Field label="Password" hint="Demo portal — any 4+ characters"><input type="password" value={password} onChange={(e) => setPassword(e.target.value)} autoComplete="current-password" /></Field>{error && <div className="agent-error block">{error}</div>}<button type="submit" className="px-btn wide">Sign in</button></form></div>;
+  return <div className="login-page"><form className="login-card" onSubmit={submit}><div className="brand"><img className="brand-logo" src="/favicon-192.png" alt="" /><div className="brand-copy"><strong>LAVA</strong><small>Insurance</small></div><div className="exchange"><span>Agent</span>Exchange</div></div><h1>Sign in</h1><p className="px-muted"><CheckCircle2 size={13} /> You have been signed out.</p><Field label="User ID"><input value={user} onChange={(e) => setUser(e.target.value)} autoComplete="username" /></Field><Field label="Password" hint="Demo portal — any 4+ characters"><input type="password" value={password} onChange={(e) => setPassword(e.target.value)} autoComplete="current-password" /></Field>{error && <div className="agent-error block">{error}</div>}<button type="submit" className="px-btn wide">Sign in</button></form></div>;
 }
 
 export function NotFoundPage() {

@@ -107,6 +107,6 @@ export function HelpDrawer({ onClose, topic = 'quoting' }: { onClose: () => void
         <ol><li><strong>Prospect</strong> — legal name, mailing address and date of birth enable prefill.</li><li><strong>Products</strong> — select products and the agent number for each.</li><li><strong>Underwriting</strong> — eligibility questions; “Yes” answers can refer the quote.</li><li><strong>Drivers &amp; vehicles / Property</strong> — confirm prefill and add details.</li><li><strong>Coverages</strong> — limits, deductibles and endorsements like ERIE Auto Plus®.</li><li><strong>Quote summary</strong> — premium, discounts and payment plan.</li><li><strong>Application &amp; bind</strong> — signatures, prior insurance, issue.</li></ol>
       </> : <p>Use the navigation menus to reach products, billing, claims and tools.</p>}
       <h3>Need a person?</h3>
-      <p>Agency Support Desk: (800) 555-0199<br />Underwriting: <Link to="/contacts?q=underwriting" onClick={onClose}>ERIE Contacts</Link><br />Claims (24/7): (800) 367-3743</p>
+      <p>Agency Support Desk: (800) 555-0199<br />Underwriting: <Link to="/contacts?q=underwriting" onClick={onClose}>LAVA Contacts</Link><br />Claims (24/7): (800) 367-3743</p>
     </div></aside></div>;
 }

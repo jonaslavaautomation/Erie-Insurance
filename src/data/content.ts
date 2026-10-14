@@ -51,7 +51,7 @@ export const navMenus: MenuItem[] = [
     ],
   },
   {
-    label: 'ABOUT ERIE',
+    label: 'ABOUT LAVA',
     columns: [
       { heading: 'Company', links: [{ label: 'About Erie Insurance', to: '/resources/about-erie' }, { label: "Founder's Vision", to: '/resources/founders-vision' }, { label: 'News Archive', to: '/news' }] },
       { heading: 'Agent Community', links: [{ label: 'What is Task Force', to: '/resources/task-force' }, { label: 'Task Force Top Priorities', to: '/resources/task-force-priorities' }, { label: 'ERIE Contacts', to: '/contacts' }] },

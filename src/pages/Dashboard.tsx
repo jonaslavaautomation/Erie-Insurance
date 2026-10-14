@@ -32,11 +32,11 @@ export default function Dashboard() {
   const [newsIndex, setNewsIndex] = useState(0);
   const [quoteTab, setQuoteTab] = useState<Tab>('PERSONAL');
   const [productTab, setProductTab] = useState<Tab>('PERSONAL');
-  const [newsTab, setNewsTab] = useState<'ERIE NEWS' | 'ERIE PUBLICATIONS'>('ERIE NEWS');
+  const [newsTab, setNewsTab] = useState<'LAVA NEWS' | 'LAVA PUBLICATIONS'>('LAVA NEWS');
   const [quoteName, setQuoteName] = useState<CustomerName>(emptyName);
   const [customerName, setCustomerName] = useState<CustomerName>(emptyName);
 
-  const slides = useMemo(() => newsItems.filter((item) => Boolean(item.publication) === (newsTab === 'ERIE PUBLICATIONS')), [newsTab]);
+  const slides = useMemo(() => newsItems.filter((item) => Boolean(item.publication) === (newsTab === 'LAVA PUBLICATIONS')), [newsTab]);
   const activeNews = slides[newsIndex % slides.length];
 
   const startQuote = () => {
@@ -127,9 +127,9 @@ function ProductHelpCard({ activeTab, onTabChange }: { activeTab: Tab; onTabChan
   return <Card title="QUICK PRODUCT HELP" className="product-help-card"><CardTabs activeTab={activeTab} onTabChange={onTabChange} /><label className="muted-label">Select a product</label><form className="select-action" onSubmit={(event) => { event.preventDefault(); navigate(`/products/${slug}`); }}><select value={slug} onChange={(event) => setSelected({ ...selected, [activeTab]: event.target.value })} aria-label="Select a product">{options.map((p) => <option key={p.slug} value={p.slug}>{p.name}</option>)}</select><button aria-label="Open product help" type="submit"><ChevronRight size={22} /></button></form><div className="card-section-label">PRODUCT LINKS</div><LinkList items={[{ label: 'Underwriting Guidelines', to: `/products/${slug}#eligibility` }, { label: 'Rules Manual', to: '/resources/rules-manual' }, { label: 'Named Insured Status Domestic', to: '/resources/named-insured-domestic' }]} /><MoreLinks items={[{ label: 'All underwriting guidelines', to: '/resources/underwriting-guidelines' }, { label: 'ERIEbooks manuals', to: '/resources/eriebooks' }]} /></Card>;
 }
 
-function NewsCard({ activeTab, onTabChange, slides, news, index, onSlide }: { activeTab: 'ERIE NEWS' | 'ERIE PUBLICATIONS'; onTabChange: (tab: 'ERIE NEWS' | 'ERIE PUBLICATIONS') => void; slides: typeof newsItems; news: typeof newsItems[number]; index: number; onSlide: (direction: number) => void }) {
-  const newsTabs: ('ERIE NEWS' | 'ERIE PUBLICATIONS')[] = ['ERIE NEWS', 'ERIE PUBLICATIONS'];
-  return <Card title="NEWS FEED" tone="navy" className="news-card" to="/news"><CardTabs activeTab={activeTab} onTabChange={onTabChange} items={newsTabs} /><div className="news-hero"><button onClick={() => onSlide(-1)} aria-label="Previous story" type="button"><ArrowLeft size={25} /></button><Link to={`/news/${news.id}`} className="news-badge">{news.badge.split('\n').map((line) => <span key={line}>{line}</span>)}</Link><button onClick={() => onSlide(1)} aria-label="Next story" type="button"><ArrowRight size={25} /></button></div><div className="news-copy"><h2><Link to={`/news/${news.id}`}>{news.title}</Link></h2><p><strong>{news.date}</strong><br />{news.body} <Link to={`/news/${news.id}`}>Read the full story and FAQs.</Link></p></div><div className="news-bottom"><div className="dots">{slides.map((slide, dotIndex) => <button key={slide.id} type="button" className={dotIndex === index ? 'active' : ''} onClick={() => onSlide(dotIndex - index)} aria-label={`Show story ${dotIndex + 1}`} />)}</div><Link to={activeTab === 'ERIE PUBLICATIONS' ? '/news?type=publications' : '/news'}>News Archive</Link></div></Card>;
+function NewsCard({ activeTab, onTabChange, slides, news, index, onSlide }: { activeTab: 'LAVA NEWS' | 'LAVA PUBLICATIONS'; onTabChange: (tab: 'LAVA NEWS' | 'LAVA PUBLICATIONS') => void; slides: typeof newsItems; news: typeof newsItems[number]; index: number; onSlide: (direction: number) => void }) {
+  const newsTabs: ('LAVA NEWS' | 'LAVA PUBLICATIONS')[] = ['LAVA NEWS', 'LAVA PUBLICATIONS'];
+  return <Card title="NEWS FEED" tone="navy" className="news-card" to="/news"><CardTabs activeTab={activeTab} onTabChange={onTabChange} items={newsTabs} /><div className="news-hero"><button onClick={() => onSlide(-1)} aria-label="Previous story" type="button"><ArrowLeft size={25} /></button><Link to={`/news/${news.id}`} className="news-badge">{news.badge.split('\n').map((line) => <span key={line}>{line}</span>)}</Link><button onClick={() => onSlide(1)} aria-label="Next story" type="button"><ArrowRight size={25} /></button></div><div className="news-copy"><h2><Link to={`/news/${news.id}`}>{news.title}</Link></h2><p><strong>{news.date}</strong><br />{news.body} <Link to={`/news/${news.id}`}>Read the full story and FAQs.</Link></p></div><div className="news-bottom"><div className="dots">{slides.map((slide, dotIndex) => <button key={slide.id} type="button" className={dotIndex === index ? 'active' : ''} onClick={() => onSlide(dotIndex - index)} aria-label={`Show story ${dotIndex + 1}`} />)}</div><Link to={activeTab === 'LAVA PUBLICATIONS' ? '/news?type=publications' : '/news'}>News Archive</Link></div></Card>;
 }
 
 function QuickToolsCard() {
@@ -161,7 +161,7 @@ function DashboardSnapshot() {
 function ContactsCard() {
   const navigate = useNavigate();
   const [query, setQuery] = useState('');
-  return <Card title="ERIE CONTACTS" to="/contacts"><label className="muted-label">Search the phone directory</label><form className="icon-input" onSubmit={(event) => { event.preventDefault(); navigate(`/contacts?q=${encodeURIComponent(query)}`); }}><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Name, title, or department" aria-label="Search contacts" /><button type="submit" aria-label="Search directory"><Search size={17} /></button></form><div className="quick-numbers"><span>Claims 24/7 <a href="tel:18003673743">(800) 367-3743</a></span><span>Customer Care <a href="tel:18004580811">(800) 458-0811</a></span></div></Card>;
+  return <Card title="LAVA CONTACTS" to="/contacts"><label className="muted-label">Search the phone directory</label><form className="icon-input" onSubmit={(event) => { event.preventDefault(); navigate(`/contacts?q=${encodeURIComponent(query)}`); }}><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Name, title, or department" aria-label="Search contacts" /><button type="submit" aria-label="Search directory"><Search size={17} /></button></form><div className="quick-numbers"><span>Claims 24/7 <a href="tel:18003673743">(800) 367-3743</a></span><span>Customer Care <a href="tel:18004580811">(800) 458-0811</a></span></div></Card>;
 }
 
 function TaskForceCard() {

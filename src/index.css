@@ -140,3 +140,4 @@ select { appearance: auto; color: #777; }
   :root { --zoom: 1.25; }
   html { zoom: var(--zoom); }
 }
+.brand-logo { width: 30px; height: 30px; margin-right: 6px; object-fit: contain; }

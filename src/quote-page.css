@@ -110,3 +110,4 @@
 @media (max-width: 700px) { .sync-status { display: none; } }
 .sync-status.setup { color: #8a5a00; }
 .sync-status.setup i { background: #f5a623; }
+.quote-brand-logo { width: 36px; height: 36px; object-fit: contain; }
